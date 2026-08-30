@@ -1,0 +1,23 @@
+# CMake build outputs
+build/
+build_*/
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Editors / IDEs
+.vscode/
+.idea/
+.vs/
+*.swp
+*~
+
+# Compiler / instrumentation
+core
+core.*
+vgcore.*

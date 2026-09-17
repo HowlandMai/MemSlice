@@ -5,7 +5,7 @@
 作者：Howland Mai　·　版权：© 2026　·　许可证：[MIT](LICENSE)
 
 ![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
-![Build System](https://img.shields.io/badge/CMake-%E2%89%A5%204.0-brightgreen.svg)
+![Build System](https://img.shields.io/badge/xmake-%E2%89%A5%203.0-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Language](https://img.shields.io/badge/Language-Chinese-lightgrey.svg)
 
@@ -64,7 +64,7 @@ MemSlice 是一个用 C++20 编写的现代内存池库。它采用经典的两�
 - **STL 分配器兼容**：内置可复用的 `Allocator<T>`。
 - **可选全局重载**：可通过 `src/memory_pool.cpp` 启用全局 `new`/`delete` 加速（含 over-aligned 对齐重载）。
 - **线程安全可选**：`Config::kThreadSafe` 默认开启，二级分配器加锁，可关闭以换取单线程极致性能。
-- **资源可回收**：内存池析构时回收所有向系统申请的 chunk，不泄漏；对象头记录真实尺寸，无参 `delete` 亦能正确释放。
+- **资源可回收**：局部内存池实例析构时回收所有向系统申请的 chunk，不泄漏；对象头记录真实尺寸，无参 `delete` 亦能正确释放（全局池单例刻意不析构，见「注意事项」）。
 - **纯中文注释**：代码注释全部使用中文。
 - **MIT 开源许可**。
 
@@ -98,15 +98,15 @@ flowchart TD
 
 ```
 MemSlice/
-├── CMakeLists.txt              # CMake 构建脚本（C++20，单可执行目标）
+├── xmake.lua                   # xmake 构建脚本（C++20，静态库 + 测试可执行目标）
 ├── README.md                   # 本文件
 ├── LICENSE                     # MIT 许可证
 ├── .gitignore                  # 忽略 build/ 与编译产物
-├── .clang-format               # CLion 风格格式化配置（LLVM 基准）
+├── .clang-format               # 格式化配置（LLVM 基准，Google 风格）
 ├── include/
 │   └── memory_pool.hpp         # 核心实现（纯头文件模板，含全部分配器）
 ├── src/
-│   └── memory_pool.cpp         # 全局实例定义 + 全局 new/delete 重载
+│   └── memory_pool.cpp         # 全局池单例定义 + 全局 new/delete 重载
 └── test_memory_pool.cpp        # 功能与性能测试套件（含 main 入口）
 ```
 
@@ -117,21 +117,25 @@ MemSlice/
 ### 环境要求
 
 - 支持 C++20 的编译器（`GCC ≥ 10`、`Clang ≥ 11`、`MSVC ≥ 19.29` 等）
-- CMake `≥ 4.0`
+- xmake `≥ 3.0`（推荐使用 clang 工具链：`set_toolchains("clang")` 已内置）
 - 无需第三方依赖
 
 ### 构建
 
 ```bash
 # 在项目根目录执行
-cmake -B build -S .      # 配置
-cmake --build build      # 编译，生成可执行文件 build/memory_pool
+xmake                    # 配置并编译
+xmake -r                 # 强制全量重建
 ```
+
+产物：静态库 `libmemory_pool.a` 与测试可执行文件 `test_memory_pool`（位于 `build/linux/x86_64/release/`）。
 
 ### 运行测试
 
 ```bash
-./build/memory_pool
+xmake run test_memory_pool
+# 或直接运行产物：
+./build/linux/x86_64/release/test_memory_pool
 ```
 
 测试套件覆盖：
@@ -145,11 +149,16 @@ cmake --build build      # 编译，生成可执行文件 build/memory_pool
 7. STL 容器兼容性（`std::list` + `Allocator<int>`）
 8. 零字节分配（回归：曾因无符号下溢越界）
 9. over-aligned 类型分配（`alignas(64)`）
-10. 错误尺寸释放的防御行为
-11. 并发分配 / 释放（4 线程共享一池）
-12. `kThreadSafe = false` 配置路径
+10. over-aligned 类型经 STL 分配器分配的对齐保证（回归：此前仅 16 字节对齐）
+11. 二级分配器越界请求守卫（回归：此前发布构建下 `free_list_` 越界读写）
+12. 错误尺寸释放的防御行为
+13. 并发分配 / 释放（4 线程共享一池）
+14. `kThreadSafe = false` 配置路径
 
-> 构建与测试建议配合 `valgrind` 使用：`valgrind --leak-check=full ./build/memory_pool`，当前测试套件在 valgrind 下报告 0 泄漏、0 越界、0 数据竞争。
+> 构建与测试建议配合 `valgrind` / ASan 使用：
+> `valgrind --leak-check=full ./build/linux/x86_64/release/test_memory_pool`
+> 当前测试套件在 valgrind 下报告 0 泄漏、0 越界、0 数据竞争
+> （`still reachable` 仅为全局池单例的刻意不析构内存，非泄漏）。
 
 ### 集成到你的项目
 
@@ -161,11 +170,17 @@ cmake --build build      # 编译，生成可执行文件 build/memory_pool
 #include "memory_pool.hpp"
 ```
 
-**方式二：作为 CMake 子目录**
+**方式二：作为 xmake 子工程**
 
-```cmake
-add_subdirectory(path/to/MemSlice)
-target_link_libraries(your_target PRIVATE memory_pool)
+在父工程的 `xmake.lua` 中以 `includes` 引入，并 `add_deps` 链接：
+
+```lua
+includes("path/to/MemSlice")
+
+target("your_target")
+    set_kind("binary")
+    add_files("src/*.cpp")
+    add_deps("memory_pool")
 ```
 
 > 注意：`memory_pool` 目标会同时编译 `src/memory_pool.cpp`，从而启用全局 `new`/`delete` 重载。若只想使用 `Allocator<T>` 而不希望全局重载，请使用方式一，仅包含头文件。
@@ -276,7 +291,9 @@ public:
 };
 ```
 
-它持有一个指向 `default_memory_pool` 全局实例的引用，因此可跨容器共用同一内存池。
+它经泄漏式单例 `DefaultMemoryPool()` 访问全局内存池，可跨容器共用同一内存池。
+分配返回的内存保证满足 `alignof(T)`（含超对齐 `T`，如 `alignas(32)` 类型），
+释放以头部记录为准，无需依赖传入的 `n`。
 
 ### `DefaultConfig`
 
@@ -320,9 +337,11 @@ std::vector<double, Allocator<double>> vec; // 连续内存从内存池分配
 ## 注意事项
 
 - **全局 `new`/`delete` 重载**：`memory_pool.cpp` 会把程序内**所有**常规堆分配（包括标准库内部）都导向内存池。每个分配都在对象头记录真实基址与尺寸，无参 `delete` 也能正确回收；并额外提供了 over-aligned（`std::align_val_t`）重载。作为通用工具时需权衡；若只想服务指定的容器，建议只使用 `Allocator<T>`，而不要链接 `src/memory_pool.cpp`。
-- **一致的尺寸**：`Deallocate` / `Reallocate` 需要调用方传入与分配时一致的 `n`，否则分桶会错位。Debug 构建中会对越界尺寸触发断言（`assert`），请务必成对使用相同的尺寸。
-- **线程安全**：`Config::kThreadSafe` 默认开启，二级分配器内部加锁，多个线程可共享同一个池。若你确信只在单线程使用，可设 `kThreadSafe = false` 消除锁开销。`Allocator<T>` 统一经由全局 `default_memory_pool` 分配，跨容器共享同一锁。
-- **静态析构顺序**：若使用全局 `new`/`delete` 重载，程序退出时会先析构全局 `default_memory_pool`；请避免在其它全局对象析构中再执行 `new`/`delete`。
+- **对齐契约**：普通 `new`、`new[]`、`Allocator<T>` 一律返回 `max_align_t`（16 字节）及以上对齐的内存，超对齐请求（如 `alignas(64)`）按请求对齐返回——完全满足 C++ 对齐契约。代价是每个带头部分配的元数据开销约为 16~32 字节。
+- **一致的尺寸**：直接调用 `MemoryPool::Deallocate` / `Reallocate` 时，需要调用方传入与分配时一致的 `n`，否则分桶会错位（错桶块此后按新尺寸复用，属设计取舍）。超限请求（`> kMaxSmallObjectBytes`）的处理：分配在调试与发布构建下均抛 `std::bad_alloc`；释放则在调试构建触发断言、发布构建静默丢弃。请务必成对使用相同的尺寸。
+- **线程安全**：`Config::kThreadSafe` 默认开启，二级分配器内部加锁，多个线程可共享同一个池。若你确信只在单线程使用，可设 `kThreadSafe = false` 消除锁开销。`Allocator<T>` 统一经由全局池（`DefaultMemoryPool()`）分配，跨容器共享同一锁。
+- **全局池为泄漏式单例**：`DefaultMemoryPool()` 采用函数内 `static` + placement new 构造，刻意永不析构。这保证了：构造期（其它全局对象构造中执行 `new`）与退出期（其它全局对象析构中执行 `new`/`delete`）都不会撞上未初始化或已释放的池。代价是该池及其 chunk 在程序生命周期内不归还系统（valgrind 报告为 `still reachable`，非泄漏）。
+- **已知 ABI 限制**：`new T[n]` 且 `T` 对齐为 16、带非平凡析构（数组含 8 字节 cookie）时，元素起始地址为「分配基址 + 8」，可能出现 8 字节对齐而非 16 字节对齐。这是 GCC/Clang 与 libstdc++ 默认分配器一致的标准行为（x86-64 上通常无碍），如需此类数组的严格 16 对齐，建议对元素类型使用 `alignas(32)` 以上（走 over-aligned 路径）。
 - **`kChunkSize`**：该字段目前未参与分配逻辑，保留以备扩展。
 
 ---
@@ -339,8 +358,8 @@ std::vector<double, Allocator<double>> vec; // 连续内存从内存池分配
 
 欢迎提交 Issue 与 PR。提交前请：
 
-1. 运行 `cmake --build build` 确保编译通过；
-2. 运行 `./build/memory_pool` 确保全部测试通过；
+1. 运行 `xmake` 确保编译通过；
+2. 运行 `xmake run test_memory_pool` 确保全部测试通过；
 3. 尽量遵循 `.clang-format` 的代码风格。
 
 ---

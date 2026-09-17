@@ -119,9 +119,9 @@ void TestNewDeleteOperators() {
     TestClass(int v, const std::string &n) : value(v), name(n) {}
 
     // 重载 new 和 delete 使用内存池
-    static void *operator new(size_t size) { return default_memory_pool.Allocate(size); }
+    static void *operator new(size_t size) { return DefaultMemoryPool().Allocate(size); }
 
-    static void operator delete(void *p, size_t size) noexcept { default_memory_pool.Deallocate(p, size); }
+    static void operator delete(void *p, size_t size) noexcept { DefaultMemoryPool().Deallocate(p, size); }
   };
 
   TestClass *p3 = new TestClass(100, "Test");
@@ -313,6 +313,60 @@ void TestOverAlignedAllocation() {
   std::cout << "Over-aligned allocation test passed!" << std::endl;
 }
 
+// 32 字节对齐类型（用于 Allocator 对齐回归测试）
+struct alignas(32) A32 {
+  char data[32];
+};
+
+// 测试超对齐类型经 STL 分配器分配时的对齐（回归：此前池与 malloc 均只保证 16 字节对齐）
+void TestOverAlignedAllocator() {
+  std::cout << "\nTesting over-aligned Allocator<T>..." << std::endl;
+
+  {
+    std::vector<A32, Allocator<A32>> v(3);
+    assert((reinterpret_cast<std::uintptr_t>(v.data()) % 32) == 0);
+    std::cout << "vector<A32> data aligned to 32 bytes" << std::endl;
+  }
+
+  {
+    std::vector<Aligned64, Allocator<Aligned64>> v(3);
+    assert((reinterpret_cast<std::uintptr_t>(v.data()) % 64) == 0);
+    std::cout << "vector<Aligned64> data aligned to 64 bytes" << std::endl;
+  }
+
+  {
+    // 16 对齐类型（普通档）也应满足
+    std::vector<long double, Allocator<long double>> v(3);
+    assert((reinterpret_cast<std::uintptr_t>(v.data()) % alignof(long double)) == 0);
+    std::cout << "vector<long double> data aligned" << std::endl;
+  }
+
+  std::cout << "Over-aligned Allocator test passed!" << std::endl;
+}
+
+// 测试二级分配器对越界请求的守卫（回归：此前发布构建下 free_list_ 越界读写）
+void TestSecondLevelOutOfRangeGuard() {
+  std::cout << "\nTesting SecondLevelAllocator out-of-range guard..." << std::endl;
+
+  SecondLevelAllocator<DefaultConfig> alloc;
+  bool threw = false;
+  try {
+    (void)alloc.Allocate(DefaultConfig::kMaxSmallObjectBytes + 64);
+  } catch (const std::bad_alloc &) {
+    threw = true;
+  }
+  assert(threw);
+  std::cout << "Out-of-range Allocate rejected with std::bad_alloc" << std::endl;
+
+  // 边界值（恰好等于上限）仍正常分配
+  void *p = alloc.Allocate(DefaultConfig::kMaxSmallObjectBytes);
+  assert(p != nullptr);
+  alloc.Deallocate(p, DefaultConfig::kMaxSmallObjectBytes);
+  std::cout << "Boundary-size Allocate still works" << std::endl;
+
+  std::cout << "SecondLevel out-of-range guard test passed!" << std::endl;
+}
+
 // 测试错误尺寸释放的防御行为（回归：不再静默越界分桶）
 void TestWrongSizeDeallocation() {
   std::cout << "\nTesting wrong-size deallocation (defensive)..." << std::endl;
@@ -320,11 +374,14 @@ void TestWrongSizeDeallocation() {
   MemoryPool<> pool;
   void *p = pool.Allocate(64);
   assert(p != nullptr);
-  // 用错误的尺寸释放（64 字节块被当 8 字节释放）——调试构建下断言会拦截；这里仅验证不崩溃
+  // 用错误的尺寸释放（64 字节块被当 8 字节释放）：
+  // 8 ≤ 上限 128，不触发越界断言；块按 8 字节进入 8B 桶（错桶）。
+  // 该 64B 块从此只按 8B 复用（碎片化，属契约内的设计取舍），不会再按 64B 交出
   pool.Deallocate(p, 8);
-  // 再从 64 字节桶分配，不应拿到被误放入 8 字节桶的同一指针
+  // 再从 64 字节桶分配：错放 8B 桶的块不可达，Refill 会取新块，不应拿到同一指针
   void *q = pool.Allocate(64);
   assert(q != nullptr);
+  assert(q != p);
   std::cout << "Wrong-size deallocation survived; reallocated 64B at " << q << std::endl;
   pool.Deallocate(q, 64);
 
@@ -396,6 +453,8 @@ int main() {
   TestSTLCompatibility();
   TestZeroSizeAllocation();
   TestOverAlignedAllocation();
+  TestOverAlignedAllocator();
+  TestSecondLevelOutOfRangeGuard();
   TestWrongSizeDeallocation();
   TestThreadSafety();
   TestNoThreadSafeConfig();

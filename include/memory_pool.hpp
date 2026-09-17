@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -152,14 +153,21 @@ namespace memory_pool {
       return ReallocateImpl(p, old_size, new_size);
     }
 
-    // 当前池向系统申请的总字节数（用于诊断/测试）
-    [[nodiscard]] size_t heap_size() const noexcept { return heap_size_; }
+    // 当前池向系统申请的总字节数（线程安全，内部加锁）
+    [[nodiscard]] size_t heap_size() const noexcept {
+      LockGuard guard(mutex_);
+      return heap_size_;
+    }
 
   private:
     // 分配内存（调用方已持有锁）
     [[nodiscard]] void *AllocateImpl(size_t n) {
       size_t aligned_size = RoundUp(n);
-      assert(aligned_size <= Config::kMaxSmallObjectBytes);
+      // 统一在调试与发布构建下拒绝越界请求：避免 free_list_ 越界读写。
+      // 越界请求按分配失败处理，而非未定义行为
+      if (aligned_size > Config::kMaxSmallObjectBytes) {
+        throw std::bad_alloc();
+      }
 
       MemBlock **my_free_list = free_list_ + FreeListIndex(aligned_size);
       MemBlock *result = *my_free_list;
@@ -363,8 +371,58 @@ namespace memory_pool {
     [[nodiscard]] size_t heap_size() const noexcept { return second_level_alloc_.heap_size(); }
   };
 
-  // 全局内存池实例
-  extern MemoryPool<> default_memory_pool;
+  // 全局内存池（泄漏式单例，见 src/memory_pool.cpp 实现）。
+  // 采用函数内 static + placement new 泄漏：永不析构，消除退出期析构顺序问题与静态构造顺序问题。
+  MemoryPool<> &DefaultMemoryPool();
+
+  // 带头部与对齐的分配原语：供全局 new/delete 重载与 Allocator<T> 共用。
+  // 头部位于用户指针正前方，记录真实基址与总字节数，使无参 delete 也能正确回收。
+  namespace detail {
+    // 用户指针前的头部结构
+    struct RawHeader {
+      void *base;
+      size_t size;
+    };
+
+    // 头部字节数（不小于 RawHeader 实际大小，且为对齐数的整数倍）
+    constexpr std::size_t kHeaderSize = 16;
+
+    [[nodiscard]] constexpr std::size_t AlignUp(std::size_t value, std::size_t alignment) noexcept {
+      return (value + alignment - 1) & ~(alignment - 1);
+    }
+
+    [[nodiscard]] constexpr std::size_t MaxAlign() noexcept { return alignof(std::max_align_t); }
+
+    [[nodiscard]] inline RawHeader *HeaderOf(void *p) noexcept {
+      return reinterpret_cast<RawHeader *>(static_cast<char *>(p) - kHeaderSize);
+    }
+
+    // 分配 size 字节并保证 alignment 对齐。头部紧邻用户指针前（p - kHeaderSize 处）。
+    // 对 alignment ≤ max_align 的请求同样按 max_align 对齐：池按 8 字节分桶只保证
+    // 8 字节对齐，而普通 new 的契约是 max_align_t——必须显式对齐到该粒度。
+    [[nodiscard]] inline void *AllocateWithHeader(std::size_t size, std::size_t alignment) {
+      const std::size_t align = (alignment < MaxAlign()) ? MaxAlign() : alignment;
+      const std::size_t total = AlignUp(kHeaderSize + size, align) + align;
+      if (total < size) {
+        throw std::bad_alloc(); // kHeaderSize + size 回绕溢出
+      }
+      void *raw = DefaultMemoryPool().Allocate(total);
+      std::uintptr_t p = AlignUp(reinterpret_cast<std::uintptr_t>(raw) + kHeaderSize, align);
+      RawHeader *h = reinterpret_cast<RawHeader *>(p - kHeaderSize);
+      h->base = raw;
+      h->size = total;
+      return reinterpret_cast<void *>(p);
+    }
+
+    // 释放 AllocateWithHeader 返回的指针（以头部记录为准）
+    inline void FreeWithHeader(void *p) noexcept {
+      if (p == nullptr) {
+        return;
+      }
+      RawHeader *h = HeaderOf(p);
+      DefaultMemoryPool().Deallocate(h->base, h->size);
+    }
+  } // namespace detail
 
   // 内存分配器类型（符合 STL 分配器要求）
   template<typename T, typename Config = DefaultConfig>
@@ -387,11 +445,12 @@ namespace memory_pool {
       if (n > std::numeric_limits<size_type>::max() / sizeof(T)) {
         throw std::bad_alloc();
       }
-      return static_cast<T *>(default_memory_pool.Allocate(n * sizeof(T)));
+      // 走带头部路径以保证 alignof(T) 对齐（含超对齐 T）；deallocate 以头部记录为准
+      return static_cast<T *>(detail::AllocateWithHeader(n * sizeof(T), alignof(T)));
     }
 
     // 释放内存
-    void deallocate(T *p, size_type n) noexcept { default_memory_pool.Deallocate(p, n * sizeof(T)); }
+    void deallocate(T *p, size_type /*n*/) noexcept { detail::FreeWithHeader(p); }
   };
 
   // 分配器相等性比较

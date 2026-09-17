@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-#include <iostream>
 #include <cassert>
-#include <vector>
 #include <chrono>
-#include <string>
-#include <list>
-#include <thread>
 #include <cstdint>
+#include <iostream>
+#include <list>
+#include <string>
+#include <thread>
+#include <vector>
 #include "./include/memory_pool.hpp"
 
 // 使用内存池命名空间
@@ -22,15 +22,15 @@ void TestBasicAllocateDeallocate() {
   MemoryPool<> pool;
 
   // 测试小内存分配
-  void* p1 = pool.Allocate(16);
+  void *p1 = pool.Allocate(16);
   assert(p1 != nullptr);
   std::cout << "Allocated 16 bytes at " << p1 << std::endl;
 
-  void* p2 = pool.Allocate(32);
+  void *p2 = pool.Allocate(32);
   assert(p2 != nullptr);
   std::cout << "Allocated 32 bytes at " << p2 << std::endl;
 
-  void* p3 = pool.Allocate(64);
+  void *p3 = pool.Allocate(64);
   assert(p3 != nullptr);
   std::cout << "Allocated 64 bytes at " << p3 << std::endl;
 
@@ -45,14 +45,14 @@ void TestBasicAllocateDeallocate() {
   std::cout << "Deallocated 64 bytes at " << p3 << std::endl;
 
   // 测试重复分配相同大小的内存（应该重用之前释放的内存）
-  void* p4 = pool.Allocate(16);
+  void *p4 = pool.Allocate(16);
   assert(p4 != nullptr);
   std::cout << "Reallocated 16 bytes at " << p4 << std::endl;
 
   pool.Deallocate(p4, 16);
 
   // 测试大于配置的最大小对象大小的内存分配（应该使用一级分配器）
-  void* p_large = pool.Allocate(2048);
+  void *p_large = pool.Allocate(2048);
   assert(p_large != nullptr);
   std::cout << "Allocated large memory (2048 bytes) at " << p_large << std::endl;
 
@@ -64,9 +64,9 @@ void TestBasicAllocateDeallocate() {
 
 // 自定义配置结构体
 struct CustomConfig {
-  static constexpr size_t kAlignSize = 16;                  // 16 字节对齐
-  static constexpr size_t kMaxSmallObjectBytes = 128;       // 最大小对象 128 字节
-  static constexpr int kDefaultNobjs = 50;                  // 默认每次分配 50 个对象
+  static constexpr size_t kAlignSize = 16; // 16 字节对齐
+  static constexpr size_t kMaxSmallObjectBytes = 128; // 最大小对象 128 字节
+  static constexpr int kDefaultNobjs = 50; // 默认每次分配 50 个对象
 };
 
 // 测试自定义配置的内存池
@@ -77,7 +77,7 @@ void TestCustomConfig() {
   MemoryPool<CustomConfig> pool;
 
   // 测试分配
-  void* p1 = pool.Allocate(128);  // 刚好是最大小对象大小
+  void *p1 = pool.Allocate(128); // 刚好是最大小对象大小
   assert(p1 != nullptr);
   std::cout << "Allocated 128 bytes (custom max size) at " << p1 << std::endl;
 
@@ -91,14 +91,14 @@ void TestNewDeleteOperators() {
   std::cout << "\nTesting new and delete operators..." << std::endl;
 
   // 测试普通对象的 new 和 delete
-  int* p1 = new int(42);
+  int *p1 = new int(42);
   assert(p1 != nullptr);
   assert(*p1 == 42);
   std::cout << "Allocated int with new: " << *p1 << std::endl;
   delete p1;
 
   // 测试数组的 new[] 和 delete[]
-  int* p2 = new int[5];
+  int *p2 = new int[5];
   assert(p2 != nullptr);
   for (int i = 0; i < 5; ++i) {
     p2[i] = i * 10;
@@ -116,19 +116,15 @@ void TestNewDeleteOperators() {
     int value;
     std::string name;
 
-    TestClass(int v, const std::string& n) : value(v), name(n) {}
+    TestClass(int v, const std::string &n) : value(v), name(n) {}
 
     // 重载 new 和 delete 使用内存池
-    static void* operator new(size_t size) {
-      return default_memory_pool.Allocate(size);
-    }
+    static void *operator new(size_t size) { return default_memory_pool.Allocate(size); }
 
-    static void operator delete(void* p, size_t size) noexcept {
-      default_memory_pool.Deallocate(p, size);
-    }
+    static void operator delete(void *p, size_t size) noexcept { default_memory_pool.Deallocate(p, size); }
   };
 
-  TestClass* p3 = new TestClass(100, "Test");
+  TestClass *p3 = new TestClass(100, "Test");
   assert(p3 != nullptr);
   assert(p3->value == 100);
   assert(p3->name == "Test");
@@ -145,25 +141,25 @@ void TestReallocate() {
   MemoryPool<> pool;
 
   // 分配初始内存
-  void* p1 = pool.Allocate(16);
+  void *p1 = pool.Allocate(16);
   assert(p1 != nullptr);
   std::cout << "Allocated 16 bytes at " << p1 << std::endl;
 
   // 向 p1 写入一些数据
-  int* data = static_cast<int*>(p1);
+  int *data = static_cast<int *>(p1);
   *data = 12345;
 
   // 重新分配为更大的内存
-  void* p2 = pool.Reallocate(p1, 16, 32);
+  void *p2 = pool.Reallocate(p1, 16, 32);
   assert(p2 != nullptr);
   std::cout << "Reallocated to 32 bytes at " << p2 << std::endl;
 
   // 验证数据是否被正确拷贝
-  assert(*static_cast<int*>(p2) == 12345);
-  std::cout << "Data preserved after reallocation: " << *static_cast<int*>(p2) << std::endl;
+  assert(*static_cast<int *>(p2) == 12345);
+  std::cout << "Data preserved after reallocation: " << *static_cast<int *>(p2) << std::endl;
 
   // 重新分配为更小的内存
-  void* p3 = pool.Reallocate(p2, 32, 8);
+  void *p3 = pool.Reallocate(p2, 32, 8);
   assert(p3 != nullptr);
   std::cout << "Reallocated to 8 bytes at " << p3 << std::endl;
 
@@ -183,27 +179,29 @@ void TestPerformance() {
   auto start = std::chrono::high_resolution_clock::now();
 
   for (int i = 0; i < kNumAllocations; ++i) {
-    size_t size = (i % 64) + 1;  // 1 到 64 字节
-    void* p = pool.Allocate(size);
+    size_t size = (i % 64) + 1; // 1 到 64 字节
+    void *p = pool.Allocate(size);
     pool.Deallocate(p, size);
   }
 
   auto end = std::chrono::high_resolution_clock::now();
   auto pool_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Memory pool: " << pool_duration.count() << " ms for " << kNumAllocations << " allocations/deallocations" << std::endl;
+  std::cout << "Memory pool: " << pool_duration.count() << " ms for " << kNumAllocations << " allocations/deallocations"
+            << std::endl;
 
   // 测试系统 malloc 性能
   start = std::chrono::high_resolution_clock::now();
 
   for (int i = 0; i < kNumAllocations; ++i) {
-    size_t size = (i % 64) + 1;  // 1 到 64 字节
-    void* p = std::malloc(size);
+    size_t size = (i % 64) + 1; // 1 到 64 字节
+    void *p = std::malloc(size);
     std::free(p);
   }
 
   end = std::chrono::high_resolution_clock::now();
   auto malloc_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "System malloc: " << malloc_duration.count() << " ms for " << kNumAllocations << " allocations/deallocations" << std::endl;
+  std::cout << "System malloc: " << malloc_duration.count() << " ms for " << kNumAllocations
+            << " allocations/deallocations" << std::endl;
 
   std::cout << "Performance test completed!" << std::endl;
 }
@@ -214,13 +212,13 @@ void TestLargeNumberOfAllocations() {
 
   MemoryPool<> pool;
   const int kNumAllocations = 10000;
-  std::vector<void*> pointers;
+  std::vector<void *> pointers;
   pointers.reserve(kNumAllocations);
 
   // 分配大量小内存
   for (int i = 0; i < kNumAllocations; ++i) {
-    size_t size = (i % 32) + 1;  // 1 到 32 字节
-    void* p = pool.Allocate(size);
+    size_t size = (i % 32) + 1; // 1 到 32 字节
+    void *p = pool.Allocate(size);
     pointers.push_back(p);
   }
 
@@ -254,7 +252,7 @@ void TestSTLCompatibility() {
 
   // 测试访问元素
   int count = 0;
-  for (const auto& elem : my_list) {
+  for (const auto &elem: my_list) {
     if (count % 100 == 0) {
       std::cout << "Element at position " << count << ": " << elem << std::endl;
     }
@@ -269,8 +267,8 @@ void TestZeroSizeAllocation() {
   std::cout << "\nTesting zero-size allocation..." << std::endl;
 
   MemoryPool<> pool;
-  void* a = pool.Allocate(0);
-  void* b = pool.Allocate(0);
+  void *a = pool.Allocate(0);
+  void *b = pool.Allocate(0);
   assert(a != nullptr);
   assert(b != nullptr);
   assert(a != b);
@@ -289,14 +287,14 @@ struct alignas(64) Aligned64 {
 void TestOverAlignedAllocation() {
   std::cout << "\nTesting over-aligned allocation..." << std::endl;
 
-  Aligned64* p1 = new Aligned64();
+  Aligned64 *p1 = new Aligned64();
   assert(p1 != nullptr);
   assert((reinterpret_cast<std::uintptr_t>(p1) % 64) == 0);
-  std::cout << "Allocated alignas(64) object at " << p1
-            << " (mod 64 == " << (reinterpret_cast<std::uintptr_t>(p1) % 64) << ")" << std::endl;
+  std::cout << "Allocated alignas(64) object at " << p1 << " (mod 64 == " << (reinterpret_cast<std::uintptr_t>(p1) % 64)
+            << ")" << std::endl;
   delete p1;
 
-  Aligned64* arr = new Aligned64[3];
+  Aligned64 *arr = new Aligned64[3];
   assert(arr != nullptr);
   assert((reinterpret_cast<std::uintptr_t>(arr) % 64) == 0);
   arr[1].data[0] = 42;
@@ -305,10 +303,10 @@ void TestOverAlignedAllocation() {
   delete[] arr;
 
   // 验证基本对齐对象仍正常（int / double）
-  int* pi = new int(12345);
+  int *pi = new int(12345);
   assert(pi != nullptr && *pi == 12345);
   delete pi;
-  double* pd = new double(3.14);
+  double *pd = new double(3.14);
   assert(pd != nullptr && *pd > 3.0 && *pd < 4.0);
   delete pd;
 
@@ -320,12 +318,12 @@ void TestWrongSizeDeallocation() {
   std::cout << "\nTesting wrong-size deallocation (defensive)..." << std::endl;
 
   MemoryPool<> pool;
-  void* p = pool.Allocate(64);
+  void *p = pool.Allocate(64);
   assert(p != nullptr);
   // 用错误的尺寸释放（64 字节块被当 8 字节释放）——调试构建下断言会拦截；这里仅验证不崩溃
   pool.Deallocate(p, 8);
   // 再从 64 字节桶分配，不应拿到被误放入 8 字节桶的同一指针
-  void* q = pool.Allocate(64);
+  void *q = pool.Allocate(64);
   assert(q != nullptr);
   std::cout << "Wrong-size deallocation survived; reallocated 64B at " << q << std::endl;
   pool.Deallocate(q, 64);
@@ -349,12 +347,12 @@ void TestThreadSafety() {
     threads.emplace_back([&pool]() {
       for (int i = 0; i < kOps; ++i) {
         size_t size = (i % 64) + 1;
-        void* p = pool.Allocate(size);
+        void *p = pool.Allocate(size);
         pool.Deallocate(p, size);
       }
     });
   }
-  for (auto& th : threads) {
+  for (auto &th: threads) {
     th.join();
   }
 
@@ -376,10 +374,10 @@ void TestNoThreadSafeConfig() {
   std::cout << "\nTesting kThreadSafe=false configuration..." << std::endl;
 
   MemoryPool<NoThreadSafeConfig> pool;
-  void* p = pool.Allocate(32);
+  void *p = pool.Allocate(32);
   assert(p != nullptr);
   pool.Deallocate(p, 32);
-  void* q = pool.Allocate(0);
+  void *q = pool.Allocate(0);
   assert(q != nullptr);
   pool.Deallocate(q, 0);
   std::cout << "NoThreadSafe configuration test passed!" << std::endl;

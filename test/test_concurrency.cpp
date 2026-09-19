@@ -2,25 +2,19 @@
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
 // 并发安全与线程安全开关。
+
 #include "test_utils.hpp"
 
-#include <cassert>
-#include <chrono>
-#include <cstdint>
-#include <iostream>
-#include <list>
-#include <string>
+#include <cstddef>
 #include <thread>
 #include <vector>
 
-#include "./include/memory_pool.hpp"
+#include "memory_pool/pool.hpp"
 
 using namespace memory_pool;
 
 // 测试并发安全（回归：默认开启线程安全，且无递归锁）
 MEMSLICE_CASE(concurrency, thread_safety) {
-  std::cout << "\nTesting thread safety..." << std::endl;
-
   constexpr int kThreads = 4;
   constexpr int kOps = 50000;
 
@@ -34,7 +28,7 @@ MEMSLICE_CASE(concurrency, thread_safety) {
       for (int i = 0; i < kOps; ++i) {
         size_t size = (i % 64) + 1;
         void *p = pool.Allocate(size);
-        pool.Deallocate(p, size);
+        pool.Deallocate(p);
       }
     });
   }
@@ -42,10 +36,9 @@ MEMSLICE_CASE(concurrency, thread_safety) {
     th.join();
   }
 
-  std::cout << "Completed " << (kThreads * kOps) << " concurrent alloc/dealloc, "
-            << "pool heap_size=" << pool.heap_size() << " bytes" << std::endl;
-  assert(pool.heap_size() > 0);
-  std::cout << "Thread safety test passed!" << std::endl;
+  MEMSLICE_EXPECT(pool.heap_size() > 0);
+  MEMSLICE_INFO("completed " << (kThreads * kOps) << " concurrent alloc/dealloc, pool heap_size=" << pool.heap_size()
+                             << " bytes");
 }
 
 // 测试关闭线程安全的配置路径（覆盖空操作锁的编译与运行）
@@ -57,14 +50,12 @@ struct NoThreadSafeConfig {
 };
 
 MEMSLICE_CASE(concurrency, no_thread_safe_config) {
-  std::cout << "\nTesting kThreadSafe=false configuration..." << std::endl;
-
   MemoryPool<NoThreadSafeConfig> pool;
   void *p = pool.Allocate(32);
-  assert(p != nullptr);
-  pool.Deallocate(p, 32);
+  MEMSLICE_EXPECT(p != nullptr);
+  pool.Deallocate(p);
   void *q = pool.Allocate(0);
-  assert(q != nullptr);
-  pool.Deallocate(q, 0);
-  std::cout << "NoThreadSafe configuration test passed!" << std::endl;
+  MEMSLICE_EXPECT(q != nullptr);
+  pool.Deallocate(q);
+  MEMSLICE_INFO("kThreadSafe=false configuration works (noop lock path)");
 }

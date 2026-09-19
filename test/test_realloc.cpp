@@ -1,52 +1,67 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-// 重新分配（Reallocate）的数据保全。
+// 重新分配（Reallocate）的数据保全与跨级切换。
+
 #include "test_utils.hpp"
 
-#include <cassert>
-#include <chrono>
-#include <cstdint>
-#include <iostream>
-#include <list>
-#include <string>
-#include <thread>
-#include <vector>
+#include <cstddef>
 
-#include "./include/memory_pool.hpp"
+#include "memory_pool/pool.hpp"
 
 using namespace memory_pool;
 
-// 测试内存重新分配功能
 MEMSLICE_CASE(realloc, data_preservation) {
-  std::cout << "\nTesting reallocate..." << std::endl;
-
   MemoryPool<> pool;
 
-  // 分配初始内存
   void *p1 = pool.Allocate(16);
-  assert(p1 != nullptr);
-  std::cout << "Allocated 16 bytes at " << p1 << std::endl;
-
-  // 向 p1 写入一些数据
+  MEMSLICE_EXPECT(p1 != nullptr);
   int *data = static_cast<int *>(p1);
   *data = 12345;
+  MEMSLICE_INFO("allocated 16 bytes at " << p1 << ", wrote 12345");
 
-  // 重新分配为更大的内存
-  void *p2 = pool.Reallocate(p1, 16, 32);
-  assert(p2 != nullptr);
-  std::cout << "Reallocated to 32 bytes at " << p2 << std::endl;
-
-  // 验证数据是否被正确拷贝
-  assert(*static_cast<int *>(p2) == 12345);
-  std::cout << "Data preserved after reallocation: " << *static_cast<int *>(p2) << std::endl;
+  // 重新分配为更大的内存（只需新尺寸，旧尺寸由头部记录）
+  void *p2 = pool.Reallocate(p1, 32);
+  MEMSLICE_EXPECT(p2 != nullptr);
+  MEMSLICE_EXPECT(*static_cast<int *>(p2) == 12345);
+  MEMSLICE_INFO("reallocated to 32 bytes at " << p2 << ", data preserved: " << *static_cast<int *>(p2));
 
   // 重新分配为更小的内存
-  void *p3 = pool.Reallocate(p2, 32, 8);
-  assert(p3 != nullptr);
-  std::cout << "Reallocated to 8 bytes at " << p3 << std::endl;
+  void *p3 = pool.Reallocate(p2, 8);
+  MEMSLICE_EXPECT(p3 != nullptr);
+  MEMSLICE_INFO("reallocated to 8 bytes at " << p3);
+  pool.Deallocate(p3);
+}
 
-  pool.Deallocate(p3, 8);
+// 跨级切换：小对象 → 大对象 → 小对象，数据均应保全
+MEMSLICE_CASE(realloc, cross_level_switch) {
+  MemoryPool<> pool;
 
-  std::cout << "Reallocate test passed!" << std::endl;
+  void *p = pool.Allocate(64);
+  MEMSLICE_EXPECT(p != nullptr);
+  auto *as_bytes = static_cast<unsigned char *>(p);
+  for (int i = 0; i < 64; ++i) {
+    as_bytes[i] = static_cast<unsigned char>(i);
+  }
+
+  // 小 → 大（跨到一级分配器）
+  void *big = pool.Reallocate(p, 4096);
+  MEMSLICE_EXPECT(big != nullptr);
+  auto *big_bytes = static_cast<unsigned char *>(big);
+  bool preserved = true;
+  for (int i = 0; i < 64; ++i) {
+    if (big_bytes[i] != static_cast<unsigned char>(i)) {
+      preserved = false;
+      break;
+    }
+  }
+  MEMSLICE_EXPECT(preserved);
+
+  // 大 → 小（回到二级分配器）
+  void *small = pool.Reallocate(big, 32);
+  MEMSLICE_EXPECT(small != nullptr);
+  MEMSLICE_EXPECT(static_cast<unsigned char *>(small)[0] == 0);
+  MEMSLICE_EXPECT(static_cast<unsigned char *>(small)[31] == 31);
+  MEMSLICE_INFO("cross-level reallocation preserved data (64 -> 4096 -> 32)");
+  pool.Deallocate(small);
 }

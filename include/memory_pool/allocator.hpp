@@ -16,56 +16,11 @@
 
 namespace memory_pool {
 
-  // 带头部与对齐的分配原语：供全局 new/delete 重载与 Allocator<T> 共用。
-  // 头部位于用户指针正前方，记录真实基址与总字节数，使无参 delete 也能正确回收。
-  namespace detail {
-    // 用户指针前的头部结构
-    struct RawHeader {
-      void *base;
-      size_t size;
-    };
-
-    // 头部字节数（不小于 RawHeader 实际大小，且为对齐数的整数倍）
-    constexpr std::size_t kHeaderSize = 16;
-
-    [[nodiscard]] constexpr std::size_t AlignUp(std::size_t value, std::size_t alignment) noexcept {
-      return (value + alignment - 1) & ~(alignment - 1);
-    }
-
-    [[nodiscard]] constexpr std::size_t MaxAlign() noexcept { return alignof(std::max_align_t); }
-
-    [[nodiscard]] inline RawHeader *HeaderOf(void *p) noexcept {
-      return reinterpret_cast<RawHeader *>(static_cast<char *>(p) - kHeaderSize);
-    }
-
-    // 分配 size 字节并保证 alignment 对齐。头部紧邻用户指针前（p - kHeaderSize 处）。
-    // 对 alignment ≤ max_align 的请求同样按 max_align 对齐：池按 8 字节分桶只保证
-    // 8 字节对齐，而普通 new 的契约是 max_align_t——必须显式对齐到该粒度。
-    [[nodiscard]] inline void *AllocateWithHeader(std::size_t size, std::size_t alignment) {
-      const std::size_t align = (alignment < MaxAlign()) ? MaxAlign() : alignment;
-      const std::size_t total = AlignUp(kHeaderSize + size, align) + align;
-      if (total < size) {
-        throw std::bad_alloc(); // kHeaderSize + size 回绕溢出
-      }
-      void *raw = DefaultMemoryPool().Allocate(total);
-      std::uintptr_t p = AlignUp(reinterpret_cast<std::uintptr_t>(raw) + kHeaderSize, align);
-      RawHeader *h = reinterpret_cast<RawHeader *>(p - kHeaderSize);
-      h->base = raw;
-      h->size = total;
-      return reinterpret_cast<void *>(p);
-    }
-
-    // 释放 AllocateWithHeader 返回的指针（以头部记录为准）
-    inline void FreeWithHeader(void *p) noexcept {
-      if (p == nullptr) {
-        return;
-      }
-      RawHeader *h = HeaderOf(p);
-      DefaultMemoryPool().Deallocate(h->base, h->size);
-    }
-  } // namespace detail
-
-  // 内存分配器类型（符合 STL 分配器要求）
+  // STL 分配器适配器：统一经全局内存池（DefaultMemoryPool()）分配，跨容器共享同一池。
+  //
+  // 记账由 MemoryPool 的「自描述头部」承担（见 block.hpp），因此：
+  //   - allocate 走池的带头部路径，保证满足 alignof(T)（含超对齐 T，如 alignas(32)）；
+  //   - deallocate 无需依赖传入的 n，尺寸以头部记录为准。
   template<typename T, typename Config = DefaultConfig>
   class Allocator {
   public:
@@ -81,16 +36,16 @@ namespace memory_pool {
     template<typename U>
     constexpr Allocator(const Allocator<U, Config> &) noexcept {}
 
-    // 分配内存
+    // 分配 n 个 T
     [[nodiscard]] T *allocate(size_type n) {
       if (n > std::numeric_limits<size_type>::max() / sizeof(T)) {
         throw std::bad_alloc();
       }
-      // 走带头部路径以保证 alignof(T) 对齐（含超对齐 T）；deallocate 以头部记录为准
+      // 经全局池的带头部分配原语，保证 alignof(T) 对齐（含超对齐 T）
       return static_cast<T *>(detail::AllocateWithHeader(n * sizeof(T), alignof(T)));
     }
 
-    // 释放内存
+    // 释放（尺寸以头部记录为准，忽略 n）
     void deallocate(T *p, size_type /*n*/) noexcept { detail::FreeWithHeader(p); }
   };
 

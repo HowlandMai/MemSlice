@@ -93,6 +93,10 @@ namespace memory_pool {
     SecondLevelAllocator(const SecondLevelAllocator &) = delete;
     SecondLevelAllocator &operator=(const SecondLevelAllocator &) = delete;
 
+    // 单次分配可用的最小/最大底层块容量（供上层判断某请求是否可由本分配器承接）
+    static constexpr size_t kMinBlockBytes = Config::kAlignSize;
+    static constexpr size_t kMaxBlockBytes = Config::kMaxSmallObjectBytes;
+
     // 分配内存
     [[nodiscard]] void *Allocate(size_t n) {
       LockGuard guard(mutex_);
@@ -115,6 +119,25 @@ namespace memory_pool {
     [[nodiscard]] size_t heap_size() const noexcept {
       LockGuard guard(mutex_);
       return heap_size_;
+    }
+
+    // ---- Raw 接口：调用方（MemoryPool 头部路径）以真实块容量为准，语义等价于上组 ----
+
+    // 该块容量是否可由本分配器承担
+    [[nodiscard]] static constexpr bool CanServe(size_t block_bytes) noexcept {
+      return block_bytes >= kMinBlockBytes && block_bytes <= kMaxBlockBytes;
+    }
+
+    // 按块容量分配（容量须落在 [kMinBlockBytes, kMaxBlockBytes] 内）
+    [[nodiscard]] void *RawAllocate(size_t block_bytes) {
+      LockGuard guard(mutex_);
+      return AllocateImpl(block_bytes);
+    }
+
+    // 按块容量回收
+    void RawDeallocate(void *p, size_t block_bytes) noexcept {
+      LockGuard guard(mutex_);
+      DeallocateImpl(p, block_bytes);
     }
 
   private:

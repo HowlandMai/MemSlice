@@ -168,13 +168,18 @@ xmake -r                 # 强制全量重建
 ### 运行测试
 
 ```bash
-xmake run test_memory_pool              # 运行全部用例
-xmake run test_memory_pool basic        # 只运行 basic 组（组名见用例列表）
+xmake test                              # 推荐：构建 + 执行全部测试，失败即退出码非 0
+xmake test test_memory_pool/basic       # 只跑某一组（组名见下表）
+xmake run test_memory_pool              # 直接运行：全部用例
+xmake run test_memory_pool basic        # 只运行 basic 组
 xmake run test_memory_pool --quiet      # 静默模式
 xmake run bench_memory_pool             # 性能基准
 # 或直接运行产物：
 ./build/linux/x86_64/release/test_memory_pool
 ```
+
+> `xmake test` 是推荐的回归入口：它把用例进程的退出码接到构建系统，
+> 测试失败会让命令以非 0 退出，因此可直接用于 CI 或提交前检查。
 
 测试套件按组划分（`组.用例` 命名，命令行传组名即可只跑一组）：
 
@@ -367,9 +372,29 @@ std::vector<double, Allocator<double>> vec; // 连续内存从内存池分配
 
 ## 性能说明
 
-测试程序内置了一组基准：对 1 到 64 字节的小对象执行 100,000 次分配 + 释放，对比内存池与系统 `malloc` 的耗时。
+`xmake run bench_memory_pool` 内置 4 组基准：固定尺寸高频、尺寸混排、批量存活、
+STL 分配器路径。基准只断言**自身有效性**（耗时为正、指针互不相同、堆用量增长、
+循环未被优化器消除），比值仅作信息输出——因为「池是否更快」随平台与负载变化。
 
-> ⚠️ 值得注意：默认配置（尺寸上限 128 字节、对齐 8 字节、批量 20 个对象）下，内存池不保证一定快于 `malloc`，尤其在本机（现代 glibc）上系统分配器本身的优化已相当出色，且不同尺寸混排会降低分桶命中率。内存池的真实优势体现在**固定小对象、高频分配/释放**且**需要减少系统调用与内存碎片**的典型场景。建议基于你的实际负载用 `TestPerformance` 中类似的方法进行基准测试后再决定是否采用。
+在本机（x86-64、clang -O2、glibc）实测的耗时构成（固定 32 字节、20 万次
+分配 + 释放交替）：
+
+| 路径                          | ns/op |
+| ----------------------------- | ----- |
+| `std::malloc` / `free`        | ~4.3  |
+| 池，`kThreadSafe = false`     | ~4.8  |
+| 池，默认（二级分配器加锁）    | ~12.3 |
+| 其中：`std::mutex` lock+unlock | ~2.7  |
+
+> ⚠️ 结论要如实说：**默认配置下内存池并不比 `malloc` 快**。去掉锁之后池与
+> `malloc` 基本持平（~4.8 vs ~4.3 ns/op），说明池自身的数据结构（分桶空闲链表）
+> 是有竞争力的；当前约 2.5× 的差距几乎全部来自「整个池共用一把 `std::mutex`」
+> 这一设计——每次分配/释放都要经历一次加解锁，而 glibc 的 tcache 路径无锁。
+>
+> 因此：单线程或对吞吐敏感的场景，把 `kThreadSafe` 设为 `false` 可立刻回到与
+> `malloc` 相当的水平；多线程场景下缩小锁粒度（分桶加锁 / thread-local 缓存）
+> 是后续最有价值的优化方向。内存池值得采用的理由是**减少系统调用与内存碎片、
+> 以及可预测的分配延迟**，而不是单纯的单次分配更快。
 
 ---
 
@@ -398,7 +423,7 @@ std::vector<double, Allocator<double>> vec; // 连续内存从内存池分配
 欢迎提交 Issue 与 PR。提交前请：
 
 1. 运行 `xmake` 确保编译通过；
-2. 运行 `xmake run test_memory_pool` 确保全部测试通过；
+2. 运行 `xmake test` 确保全部测试通过（退出码非 0 即失败）；
 3. 尽量遵循 `.clang-format` 的代码风格。
 
 ---

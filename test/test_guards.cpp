@@ -85,3 +85,14 @@ MEMSLICE_CASE(guards, deallocate_needs_no_size) {
   MEMSLICE_INFO("block reused at the same address after size-less deallocation: " << q);
   pool.Deallocate(q);
 }
+
+// 测试零尺寸指针的释放与空指针释放的健壮性
+MEMSLICE_CASE(guards, deallocate_edge_cases) {
+  MemoryPool<> pool;
+  pool.Deallocate(nullptr); // 空指针应被安全忽略
+
+  void *z = pool.Allocate(0);
+  MEMSLICE_EXPECT(z != nullptr);
+  pool.Deallocate(z);
+  MEMSLICE_INFO("Deallocate(nullptr) and zero-size deallocation are both safe");
+}

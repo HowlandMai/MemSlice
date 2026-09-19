@@ -91,3 +91,25 @@ MEMSLICE_CASE(basic, large_number_of_allocations) {
   }
   MEMSLICE_INFO("allocated and freed " << kNumAllocations << " small blocks");
 }
+
+// 测试用户数据的读写完整性（头部记账不得侵占或错位用户数据）
+MEMSLICE_CASE(basic, payload_integrity) {
+  MemoryPool<> pool;
+  for (size_t size: {1u, 7u, 16u, 33u, 64u, 96u, 112u, 128u, 500u}) {
+    auto *p = static_cast<unsigned char *>(pool.Allocate(size));
+    MEMSLICE_EXPECT(p != nullptr);
+    for (size_t i = 0; i < size; ++i) {
+      p[i] = static_cast<unsigned char>(i & 0xFF);
+    }
+    bool ok = true;
+    for (size_t i = 0; i < size; ++i) {
+      if (p[i] != static_cast<unsigned char>(i & 0xFF)) {
+        ok = false;
+        break;
+      }
+    }
+    MEMSLICE_EXPECT(ok);
+    pool.Deallocate(p);
+  }
+  MEMSLICE_INFO("payload round-trip intact across sizes 1..500 (header does not overlap user data)");
+}

@@ -4,26 +4,21 @@
 #ifndef MEMORY_POOL_MEMORY_POOL_FIRST_LEVEL_HPP_
 #define MEMORY_POOL_MEMORY_POOL_FIRST_LEVEL_HPP_
 
+#include <cstddef>
 #include <cstdlib>
 
-namespace memory_pool {
+namespace memory_pool::detail {
 
-  // 一级分配器（直接向系统申请内存）
-  template<typename Config>
-  class FirstLevelAllocator {
-  public:
+  // 一级分配器（直接向系统申请内存）。
+  // 行为不依赖任何配置，因此不是模板——避免每个 Config 实例化出一份相同代码。
+  namespace first_level {
     // 分配内存
-    [[nodiscard]] static void *Allocate(size_t n) noexcept { return std::malloc(n); }
+    [[nodiscard]] inline void *Allocate(std::size_t n) noexcept { return std::malloc(n); }
 
     // 释放内存
-    static void Deallocate(void *p, size_t /*n*/) noexcept { std::free(p); }
+    inline void Deallocate(void *p, std::size_t /*n*/) noexcept { std::free(p); }
+  } // namespace first_level
 
-    // 重新分配内存
-    [[nodiscard]] static void *Reallocate(void *p, size_t /*old_size*/, size_t new_size) noexcept {
-      return std::realloc(p, new_size);
-    }
-  };
-
-} // namespace memory_pool
+} // namespace memory_pool::detail
 
 #endif // MEMORY_POOL_MEMORY_POOL_FIRST_LEVEL_HPP_

@@ -7,7 +7,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <cstring>
 #include <mutex>
 #include <new>
 #include <type_traits>
@@ -17,7 +16,9 @@
 
 namespace memory_pool {
 
-  // 二级分配器（管理小内存块）
+  // 二级分配器（管理小内存块）。
+  // 公开接口以「底层块容量」为准（而非用户请求尺寸）：上层 MemoryPool 的头部记账
+  // 会把头部开销与对齐余量一并算进容量，因此这里只认块容量，语义唯一、无第二套尺寸口径。
   template<typename Config>
   class SecondLevelAllocator {
   private:
@@ -74,6 +75,10 @@ namespace memory_pool {
     mutable MutexT mutex_;
 
   public:
+    // 单次分配可用的最小/最大底层块容量（供上层判断某请求是否可由本分配器承接）
+    static constexpr size_t kMinBlockBytes = Config::kAlignSize;
+    static constexpr size_t kMaxBlockBytes = Config::kMaxSmallObjectBytes;
+
     // 构造函数
     SecondLevelAllocator() = default;
 
@@ -93,51 +98,27 @@ namespace memory_pool {
     SecondLevelAllocator(const SecondLevelAllocator &) = delete;
     SecondLevelAllocator &operator=(const SecondLevelAllocator &) = delete;
 
-    // 单次分配可用的最小/最大底层块容量（供上层判断某请求是否可由本分配器承接）
-    static constexpr size_t kMinBlockBytes = Config::kAlignSize;
-    static constexpr size_t kMaxBlockBytes = Config::kMaxSmallObjectBytes;
-
-    // 分配内存
-    [[nodiscard]] void *Allocate(size_t n) {
-      LockGuard guard(mutex_);
-      return AllocateImpl(n);
+    // 该块容量是否可由本分配器承担
+    [[nodiscard]] static constexpr bool CanServe(size_t block_bytes) noexcept {
+      return block_bytes >= kMinBlockBytes && block_bytes <= kMaxBlockBytes;
     }
 
-    // 释放内存
-    void Deallocate(void *p, size_t n) noexcept {
+    // 按块容量分配（容量须落在 [kMinBlockBytes, kMaxBlockBytes] 内），失败抛 std::bad_alloc
+    [[nodiscard]] void *Allocate(size_t block_bytes) {
       LockGuard guard(mutex_);
-      DeallocateImpl(p, n);
+      return AllocateImpl(block_bytes);
     }
 
-    // 重新分配内存
-    [[nodiscard]] void *Reallocate(void *p, size_t old_size, size_t new_size) {
+    // 按块容量回收（容量须与分配时一致，由上层头部保证）
+    void Deallocate(void *p, size_t block_bytes) noexcept {
       LockGuard guard(mutex_);
-      return ReallocateImpl(p, old_size, new_size);
+      DeallocateImpl(p, block_bytes);
     }
 
     // 当前池向系统申请的总字节数（线程安全，内部加锁）
     [[nodiscard]] size_t heap_size() const noexcept {
       LockGuard guard(mutex_);
       return heap_size_;
-    }
-
-    // ---- Raw 接口：调用方（MemoryPool 头部路径）以真实块容量为准，语义等价于上组 ----
-
-    // 该块容量是否可由本分配器承担
-    [[nodiscard]] static constexpr bool CanServe(size_t block_bytes) noexcept {
-      return block_bytes >= kMinBlockBytes && block_bytes <= kMaxBlockBytes;
-    }
-
-    // 按块容量分配（容量须落在 [kMinBlockBytes, kMaxBlockBytes] 内）
-    [[nodiscard]] void *RawAllocate(size_t block_bytes) {
-      LockGuard guard(mutex_);
-      return AllocateImpl(block_bytes);
-    }
-
-    // 按块容量回收
-    void RawDeallocate(void *p, size_t block_bytes) noexcept {
-      LockGuard guard(mutex_);
-      DeallocateImpl(p, block_bytes);
     }
 
   private:
@@ -178,18 +159,6 @@ namespace memory_pool {
       MemBlock *q = reinterpret_cast<MemBlock *>(p);
       q->next = *my_free_list;
       *my_free_list = q;
-    }
-
-    // 重新分配内存（调用方已持有锁）
-    [[nodiscard]] void *ReallocateImpl(void *p, size_t old_size, size_t new_size) {
-      if (p == nullptr) {
-        return AllocateImpl(new_size);
-      }
-      void *result = AllocateImpl(new_size);
-      size_t copy_size = (old_size < new_size) ? old_size : new_size;
-      std::memcpy(result, p, copy_size);
-      DeallocateImpl(p, old_size);
-      return result;
     }
 
     // 向系统申请内存并分配给空闲链表

@@ -65,3 +65,29 @@ MEMSLICE_CASE(realloc, cross_level_switch) {
   MEMSLICE_INFO("cross-level reallocation preserved data (64 -> 4096 -> 32)");
   pool.Deallocate(small);
 }
+
+// 测试 Reallocate 的尺寸增长序列（反复增长，数据应始终保全）
+MEMSLICE_CASE(realloc, growth_chain) {
+  MemoryPool<> pool;
+  auto *p = static_cast<unsigned char *>(pool.Allocate(8));
+  MEMSLICE_EXPECT(p != nullptr);
+  for (size_t i = 0; i < 8; ++i) {
+    p[i] = static_cast<unsigned char>(i + 1);
+  }
+
+  for (size_t size: {16u, 64u, 129u, 1024u, 4096u, 32u}) {
+    p = static_cast<unsigned char *>(pool.Reallocate(p, size));
+    MEMSLICE_EXPECT(p != nullptr);
+    // 前缀数据必须始终保全
+    bool ok = true;
+    for (size_t i = 0; i < 8; ++i) {
+      if (p[i] != static_cast<unsigned char>(i + 1)) {
+        ok = false;
+        break;
+      }
+    }
+    MEMSLICE_EXPECT(ok);
+  }
+  MEMSLICE_INFO("reallocation growth chain 8 -> 16 -> 64 -> 129 -> 1024 -> 4096 -> 32 preserved prefix");
+  pool.Deallocate(p);
+}

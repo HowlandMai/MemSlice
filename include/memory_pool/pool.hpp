@@ -18,20 +18,23 @@ namespace memory_pool {
 
   // 内存池主类：按请求大小在两级分配器之间路由，并统一使用「自描述头部」记账。
   //
-  // 记账约定（统一头部，见 block.hpp 的 detail::RawHeader）：
-  //   - 每一次分配都在用户指针正前方放置头部，记录真实基址 / 底层块容量 / 请求尺寸 / 来源；
-  //   - 因此 Deallocate 只需指针、无需尺寸，Reallocate 只需新尺寸——
-  //     调用方再也不需要保证「释放时传入与分配一致的 n」。
+  // 记账约定（见 block.hpp 的 detail::RawHeader）：
+  //   - 每一次分配都在用户指针正前方放置 16 字节头部，记录真实基址与「容量 | 来源」；
+  //   - 因此 Deallocate 只需指针、Reallocate 只需新尺寸——调用方无需保证尺寸成对。
   template<typename Config = DefaultConfig>
   class MemoryPool {
   private:
-    FirstLevelAllocator<Config> first_level_alloc_;
     SecondLevelAllocator<Config> second_level_alloc_;
 
-    // 头部保留字节数，它同样占用底层块容量，
-    // 因此对外可见的小对象上限需扣除头部开销后才是真正可用的净字节数。
+    // 头部保留字节数（由 RawHeader 推导），它同样占用底层块容量，
+    // 因此对外可见的净可用字节数需扣除头部开销与对齐余量。
     static constexpr size_t kHeaderBytes = detail::kHeaderSize;
     static constexpr size_t kBlockAlign = detail::MaxAlign();
+
+    // 该请求是否可由二级分配器承担（按底层块容量判断，而非用户请求尺寸）
+    [[nodiscard]] static constexpr bool FitsSecondLevel(size_t block_bytes) noexcept {
+      return SecondLevelAllocator<Config>::CanServe(block_bytes);
+    }
 
     // 分配 size 字节用户数据并返回其用户指针（头部已就位）
     [[nodiscard]] void *AllocateWithHeader(size_t size, size_t alignment) {
@@ -39,20 +42,20 @@ namespace memory_pool {
         throw std::bad_alloc(); // 请求尺寸大到无法在块容量中表达
       }
       const size_t align = (alignment < kBlockAlign) ? kBlockAlign : alignment;
-      // 底层块需要容纳「头部 + 用户数据」，并额外留出一个对齐单位的余量：
-      // 用户指针要在 raw + kHeaderBytes 之后向上取整到 align，取整最多多消耗 align-1 字节。
+      // 底层块需要容纳「头部 + 用户数据」，并额外留出对齐余量：
+      // 用户指针要在 raw + kHeaderBytes 之后向上取整到 align，取整最多多消耗 align - kBlockAlign 字节。
       const size_t total = detail::AlignUp(kHeaderBytes + size, align) + (align - kBlockAlign);
-      if (total < size) {
-        throw std::bad_alloc(); // kHeaderBytes + size 回绕溢出
+      if (total < size || total > detail::kMaxCapacity) {
+        throw std::bad_alloc(); // 回绕溢出，或超出打包容量可表达的范围
       }
 
       detail::BlockSource source;
       void *raw;
-      if (SecondLevelAllocator<Config>::CanServe(total)) {
-        raw = second_level_alloc_.RawAllocate(total);
+      if (FitsSecondLevel(total)) {
+        raw = second_level_alloc_.Allocate(total);
         source = detail::BlockSource::kSecondLevel;
       } else {
-        raw = first_level_alloc_.Allocate(total);
+        raw = detail::first_level::Allocate(total);
         if (raw == nullptr) {
           throw std::bad_alloc();
         }
@@ -63,19 +66,18 @@ namespace memory_pool {
       std::uintptr_t p = detail::AlignUp(reinterpret_cast<std::uintptr_t>(raw) + kHeaderBytes, align);
       detail::RawHeader *h = reinterpret_cast<detail::RawHeader *>(p - kHeaderBytes);
       h->base = raw;
-      h->capacity = total;
-      h->requested = size;
-      h->source = source;
+      h->packed = detail::PackCapacity(total, source);
       return reinterpret_cast<void *>(p);
     }
 
     // 以头部记录为准回收（释放与重新分配共用）
     void FreeWithHeader(void *p) noexcept {
       detail::RawHeader *h = detail::HeaderOf(p);
-      if (h->source == detail::BlockSource::kSecondLevel) {
-        second_level_alloc_.RawDeallocate(h->base, h->capacity);
+      const size_t capacity = detail::UnpackCapacity(h->packed);
+      if (detail::UnpackSource(h->packed) == detail::BlockSource::kSecondLevel) {
+        second_level_alloc_.Deallocate(h->base, capacity);
       } else {
-        first_level_alloc_.Deallocate(h->base, h->capacity);
+        detail::first_level::Deallocate(h->base, capacity);
       }
     }
 
@@ -83,7 +85,7 @@ namespace memory_pool {
     // 理论上的最大可请求尺寸：仅用于拦截大到在块容量中无法表达（会回绕）的请求。
     // 注意这里**不是**「是否走二级分配器」的分界——超出小对象上限的请求会正常
     // 回落到一级分配器。若误把分界当上限，将会错误地拒绝合法的中等尺寸请求。
-    static constexpr size_t kMaxRequestedBytes = static_cast<size_t>(-1) - kHeaderBytes - kBlockAlign;
+    static constexpr size_t kMaxRequestedBytes = detail::kMaxCapacity - kHeaderBytes - kBlockAlign;
 
     // 构造函数
     MemoryPool() = default;
@@ -106,7 +108,7 @@ namespace memory_pool {
       FreeWithHeader(p);
     }
 
-    // 重新分配：新尺寸由调用方给出，旧尺寸以头部记录为准。
+    // 重新分配：新尺寸由调用方给出，旧内容按头部记录的容量截取。
     // 全程只走「分配 + 拷贝 + 回收」，绝不把池内指针交给 glibc realloc，
     // 因此不存在旧实现中「谎报 old_size 触发 realloc(池内指针) 导致堆损坏」的路径。
     [[nodiscard]] void *Reallocate(void *p, size_t new_size) {
@@ -114,8 +116,11 @@ namespace memory_pool {
         return Allocate(new_size);
       }
 
-      const size_t old_size = detail::RequestedOf(p);
-      const size_t copy_size = (old_size < new_size) ? old_size : new_size;
+      // 可安全读取的旧内容上界 = 块容量 - 头部。
+      // 容量在分配时已按 AlignUp(头部 + 请求, align) 向上取整，故该值必然 ≥ 原始请求尺寸，
+      // 既能完整保留旧数据，又不会越过底层块边界（不再需要单独存 requested 字段）。
+      const size_t old_usable = detail::CapacityOf(p) - kHeaderBytes;
+      const size_t copy_size = (old_usable < new_size) ? old_usable : new_size;
 
       void *new_p = Allocate(new_size);
       std::memcpy(new_p, p, copy_size);

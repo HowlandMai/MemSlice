@@ -19,12 +19,20 @@ target("memory_pool_global")
     add_deps("memory_pool")
 
 -- 测试套件（依赖全局重载，因为用例覆盖 new/delete 重载路径）
+-- 通过 add_tests 接入 xmake 测试框架：用例进程退出码非 0 即判定失败，
+-- 于是 `xmake test` 把测试结果变成构建系统层面的成功/失败门禁。
 target("test_memory_pool")
     set_kind("binary")
     add_files("test/test_main.cpp", "test/test_basic.cpp", "test/test_realloc.cpp",
               "test/test_new_delete.cpp", "test/test_guards.cpp", "test/test_concurrency.cpp")
     add_includedirs("test", ".")
     add_deps("memory_pool_global")
+    add_tests("default", {runargs = {"--quiet"}})
+    add_tests("basic", {runargs = {"basic", "--quiet"}})
+    add_tests("realloc", {runargs = {"realloc", "--quiet"}})
+    add_tests("new_delete", {runargs = {"new_delete", "--quiet"}})
+    add_tests("guards", {runargs = {"guards", "--quiet"}})
+    add_tests("concurrency", {runargs = {"concurrency", "--quiet"}})
 
 -- 性能基准（单独可执行，耗时长，不纳入主测试）
 target("bench_memory_pool")

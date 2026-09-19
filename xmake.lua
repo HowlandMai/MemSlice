@@ -5,6 +5,13 @@ set_project("MemSlice")
 set_version("1.0.0")
 set_languages("c++20")
 
+-- 调试期哨兵校验（默认关闭 = 零开销）。
+-- 启用方式（用 -D 直接传给编译器，已验证生效）：
+--     xmake f --cxflags="-DMEMSLICE_DEBUG_CHECKS=1" && xmake -r
+-- 启用后 guards.sentinel_* 用例会真正执行检测（否则自我跳过）。
+-- 说明：曾尝试用 option()+has_config() 包装，但在本环境（xmake 3.0.6）
+-- 该组合读不到配置值，故改用最直接且可验证的 -D 方式。
+
 -- 头文件库目标：纯接口，无全局 new/delete 副作用，仅提供 MemoryPool / Allocator<T>
 target("memory_pool")
     set_kind("headeronly")
@@ -34,7 +41,7 @@ target("test_memory_pool")
     add_tests("guards", {runargs = {"guards", "--quiet"}})
     add_tests("concurrency", {runargs = {"concurrency", "--quiet"}})
 
--- 性能基准（单独可执行，耗时长，不纳入主测试）
+-- 性能基准（单独可执行，耗时长，不纳入默认测试）
 target("bench_memory_pool")
     set_kind("binary")
     add_files("test/test_main.cpp", "test/test_perf.cpp")

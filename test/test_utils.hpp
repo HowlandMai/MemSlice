@@ -5,11 +5,16 @@
 #define MEMORY_POOL_TEST_TEST_UTILS_HPP_
 
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <sys/wait.h>
+#include <unistd.h>
 
 // 零依赖的极简测试框架：断言宏 + 用例自注册。
 //
@@ -17,8 +22,11 @@
 //   MEMSLICE_EXPECT(cond)                     断言表达式为真，失败则退出当前用例
 //   MEMSLICE_EXPECT_THROWS(expr, ExceptionT)  断言表达式抛出指定异常
 //   MEMSLICE_INFO(msg)                        输出一条信息（仅在 verbose 模式下打印）
+//   MEMSLICE_EXPECT_DEATH(expr)               断言表达式导致进程异常终止（fork 子进程执行）
 //
 // 说明：断言失败不会终止进程，而是记录失败并跳到下一个用例（相比 assert 更容易定位）。
+// MEMSLICE_EXPECT_DEATH 用于验证「调试期哨兵」这类刻意 abort 的行为：子进程内执行，
+// 父进程检查其是否非正常退出，因此不会影响测试套件自身的存活。
 
 namespace memslice_test {
 
@@ -54,6 +62,30 @@ namespace memslice_test {
       Registry().push_back(TestCase{group, name, std::move(fn)});
     }
   };
+
+  // 在子进程内执行 fn 并等待其结束，返回子进程的退出状态。
+  // 返回 -1 表示 fork 失败；返回 0 表示子进程正常退出（exit code 0）。
+  // 若子进程因 abort/signal 终止，wait 状态非 0（哨兵生效时即为此情况）。
+  template<typename Fn>
+  int RunInChildProcess(Fn &&fn) {
+    std::fflush(stdout);
+    std::fflush(stderr);
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+      return -1;
+    }
+    if (pid == 0) {
+      // 子进程：把 stderr 重定向到 /dev/null，避免哨兵的诊断输出干扰测试报告
+      std::freopen("/dev/null", "w", stderr);
+      fn();
+      std::_Exit(0); // 走到这里说明未触发哨兵
+    }
+    int status = 0;
+    if (::waitpid(pid, &status, 0) < 0) {
+      return -1;
+    }
+    return status;
+  }
 
   // 运行全部（或按 group 过滤）用例，返回失败个数
   inline int RunAll(const std::string &filter) {
@@ -132,6 +164,21 @@ namespace memslice_test {
   do {                                                                                                                 \
     if (::memslice_test::Verbose()) {                                                                                  \
       std::cout << "         " << msg << std::endl;                                                                    \
+    }                                                                                                                  \
+  } while (false)
+
+// 断言 expr 导致进程异常终止（DEBUG 哨兵场景）。
+// expr 在 fork 出的子进程内执行，父进程检查其是否非正常退出——
+// 因此刻意 abort 的代码不会带走测试套件本身。
+// 用法：MEMSLICE_EXPECT_DEATH(pool.Deallocate(p));
+#define MEMSLICE_EXPECT_DEATH(expr)                                                                                    \
+  do {                                                                                                                 \
+    const int memslice_status = ::memslice_test::RunInChildProcess([&] { (void) (expr); });                            \
+    if (memslice_status == -1) {                                                                                       \
+      MEMSLICE_FAIL("death test: fork/waitpid failed");                                                                \
+    }                                                                                                                  \
+    if (memslice_status == 0) {                                                                                        \
+      MEMSLICE_FAIL("death test: expected abnormal termination from: " #expr);                                         \
     }                                                                                                                  \
   } while (false)
 

@@ -6,8 +6,10 @@
 #include "test_utils.hpp"
 
 #include <cstddef>
+#include <cstring>
 #include <new>
 
+#include "memory_pool/block.hpp"
 #include "memory_pool/config.hpp"
 #include "memory_pool/pool.hpp"
 #include "memory_pool/second_level.hpp"
@@ -84,6 +86,64 @@ MEMSLICE_CASE(guards, deallocate_needs_no_size) {
   MEMSLICE_EXPECT(q == p);
   MEMSLICE_INFO("block reused at the same address after size-less deallocation: " << q);
   pool.Deallocate(q);
+}
+
+// ---- 调试期哨兵（仅在启用调试校验时生效）----
+// 这些用例验证「静默的堆损坏」是否被转成可定位的显式失败。
+// 发布构建下哨兵被编译掉，因此用 kDebugChecksConfig 作编译期开关跳过。
+
+MEMSLICE_CASE(guards, sentinel_double_free) {
+  if constexpr (!detail::kDebugChecksConfig<DefaultConfig>) {
+    MEMSLICE_INFO("debug checks disabled in this build - case skipped");
+    return;
+  }
+  MemoryPool<> pool;
+  void *p = pool.Allocate(64);
+  pool.Deallocate(p);
+  // 第二次释放同一指针：调试构建下应被哨兵捕获（abort）
+  MEMSLICE_EXPECT_DEATH(pool.Deallocate(p));
+  MEMSLICE_INFO("double free detected by debug sentinel");
+}
+
+MEMSLICE_CASE(guards, sentinel_wild_pointer) {
+  if constexpr (!detail::kDebugChecksConfig<DefaultConfig>) {
+    MEMSLICE_INFO("debug checks disabled in this build - case skipped");
+    return;
+  }
+  alignas(16) static unsigned char fake[256];
+  std::memset(fake, 0xAB, sizeof(fake));
+  MemoryPool<> pool;
+  void *bogus = static_cast<void *>(fake + 64);
+  // 释放一个从未由本池分配过的指针：应被哨兵捕获
+  MEMSLICE_EXPECT_DEATH(pool.Deallocate(bogus));
+  MEMSLICE_INFO("wild pointer detected by debug sentinel");
+}
+
+MEMSLICE_CASE(guards, sentinel_corrupt_header) {
+  if constexpr (!detail::kDebugChecksConfig<DefaultConfig>) {
+    MEMSLICE_INFO("debug checks disabled in this build - case skipped");
+    return;
+  }
+  MemoryPool<> pool;
+  void *p = pool.Allocate(64);
+  // 模拟用户越界写：覆写用户指针前方的头部
+  auto *hdr = reinterpret_cast<unsigned char *>(p) - detail::kHeaderSize;
+  std::memset(hdr, 0x00, detail::kHeaderSize);
+  MEMSLICE_EXPECT_DEATH(pool.Deallocate(p));
+  MEMSLICE_INFO("corrupted header detected by debug sentinel");
+}
+
+// 对照：正常使用路径不得触发任何误报
+MEMSLICE_CASE(guards, sentinel_no_false_positive) {
+  MemoryPool<> pool;
+  for (int i = 0; i < 500; ++i) {
+    for (size_t s: {1u, 16u, 64u, 128u, 4096u}) {
+      void *p = pool.Allocate(s);
+      std::memset(p, 0x5A, s);
+      pool.Deallocate(p);
+    }
+  }
+  MEMSLICE_INFO("2500 alloc/free cycles across sizes: no false positive from the sentinel");
 }
 
 // 测试零尺寸指针的释放与空指针释放的健壮性

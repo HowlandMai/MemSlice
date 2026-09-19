@@ -7,3 +7,7 @@ build/
 .xmake/
 .cache/
 compile_commands.json
+
+# Test artifacts
+vgcore.*
+core

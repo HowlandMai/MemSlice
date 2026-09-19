@@ -6,6 +6,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -66,19 +68,55 @@ namespace memory_pool {
       std::uintptr_t p = detail::AlignUp(reinterpret_cast<std::uintptr_t>(raw) + kHeaderBytes, align);
       detail::RawHeader *h = reinterpret_cast<detail::RawHeader *>(p - kHeaderBytes);
       h->base = raw;
-      h->packed = detail::PackCapacity(total, source);
+      h->packed = detail::PackFlags(total, source, /*allocated=*/true, detail::kMagicValue);
       return reinterpret_cast<void *>(p);
     }
 
     // 以头部记录为准回收（释放与重新分配共用）
     void FreeWithHeader(void *p) noexcept {
       detail::RawHeader *h = detail::HeaderOf(p);
+
+      // 调试期校验：把静默的堆损坏变成可定位的显式失败。
+      // 发布构建下 kDebugChecks 为 false，此处不产生任何代码。
+      if constexpr (detail::kDebugChecksConfig<Config>) {
+        CheckBeforeFree(p, h);
+      }
+
       const size_t capacity = detail::UnpackCapacity(h->packed);
-      if (detail::UnpackSource(h->packed) == detail::BlockSource::kSecondLevel) {
+      const detail::BlockSource source = detail::UnpackSource(h->packed);
+
+      // 标记为已释放，使随后的重复释放可在调试构建下被识别
+      h->packed = detail::PackFlags(capacity, source, /*allocated=*/false, detail::kMagicValue);
+
+      if (source == detail::BlockSource::kSecondLevel) {
         second_level_alloc_.Deallocate(h->base, capacity);
       } else {
         detail::first_level::Deallocate(h->base, capacity);
       }
+    }
+
+    // 释放前的诊断检查（仅调试构建启用）
+    static void CheckBeforeFree(void *p, detail::RawHeader *h) {
+      // 1) 头部魔数：识别野指针、未初始化指针、或头部被越界写坏
+      if (!detail::HeaderLooksValid(p)) {
+        MemsliceFail("MemoryPool: 释放的指针头部校验失败——可能不是本池分配的指针，"
+                     "或头部已被越界写坏");
+      }
+      // 2) 分配状态位：识别重复释放（double free）
+      if (!detail::IsAllocated(p)) {
+        MemsliceFail("MemoryPool: 检测到重复释放（该块已处于已释放状态）");
+      }
+      // 3) 基址非空（头部自身完整性）
+      if (h->base == nullptr) {
+        MemsliceFail("MemoryPool: 头部记录的基址为空，头部已损坏");
+      }
+    }
+
+    // 调试期失败的统一处理：打印可定位信息并中止。
+    // 刻意用 abort 而非异常——此时堆已处于损坏状态，继续运行只会让错误更远离现场。
+    [[noreturn]] static void MemsliceFail(const char *msg) noexcept {
+      std::fprintf(stderr, "[memslice] %s\n", msg); // NOLINT
+      std::abort();
     }
 
   public:

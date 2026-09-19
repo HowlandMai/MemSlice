@@ -41,6 +41,14 @@ target("test_memory_pool")
     add_tests("guards", {runargs = {"guards", "--quiet"}})
     add_tests("concurrency", {runargs = {"concurrency", "--quiet"}})
 
+-- 性能剖析目标：供 callgrind 做指令级归因（不纳入默认测试）
+target("prof_memory_pool")
+    set_kind("binary")
+    add_files("test/prof_memory_pool.cpp")
+    add_includedirs("include")
+    add_deps("memory_pool_global")
+    add_ldflags("-g", {force = true})
+
 -- 性能基准（单独可执行，耗时长，不纳入默认测试）
 target("bench_memory_pool")
     set_kind("binary")

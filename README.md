@@ -131,7 +131,8 @@ MemSlice/
     ├── test_new_delete.cpp     # new/delete 重载、over-aligned、STL 分配器
     ├── test_guards.cpp         # 越界请求与错误尺寸释放的守卫
     ├── test_concurrency.cpp    # 多线程共享与 kThreadSafe=false
-    └── test_perf.cpp           # 性能基准（仅编入 bench_memory_pool）
+    ├── test_perf.cpp           # 性能基准（仅编入 bench_memory_pool）
+    └── prof_memory_pool.cpp    # 剖析目标（仅编入 prof_memory_pool）
 ```
 
 > 头文件之间依赖单向、无环：`config`/`block` ← `second_level` ← `pool` ← `allocator`；
@@ -163,6 +164,7 @@ xmake -r                 # 强制全量重建
 | `memory_pool_global`  | 静态库     | `default_pool.cpp` + `global_new.cpp`，全局 `new`/`delete` |
 | `test_memory_pool`    | 可执行     | 功能测试套件（22 个用例）                                  |
 | `bench_memory_pool`   | 可执行     | 性能基准（耗时较长，单独运行）                             |
+| `prof_memory_pool`    | 可执行     | 剖析目标：供 callgrind 做指令级归因                        |
 
 > **链接期选择副作用**：只有链接 `memory_pool_global`（`libmemory_pool_global.a`）才会启用全局 `new`/`delete` 重载。
 > 只依赖 `memory_pool` 头文件目标时，程序内堆分配行为完全不变——这正是「只要 `Allocator<T>`，不要全局重载」的场景。
@@ -176,6 +178,7 @@ xmake run test_memory_pool              # 直接运行：全部用例
 xmake run test_memory_pool basic        # 只运行 basic 组
 xmake run test_memory_pool --quiet      # 静默模式
 xmake run bench_memory_pool             # 性能基准
+xmake run prof_memory_pool pool 20000 32 # 剖析目标（配 callgrind 使用）
 # 或直接运行产物：
 ./build/linux/x86_64/release/test_memory_pool
 ```
@@ -392,6 +395,34 @@ STL 分配器路径。基准只断言**自身有效性**（耗时为正、指针
 > 链表）是有竞争力的；差距来自每次分配/释放的加解锁成本，而 glibc 的 tcache
 > 路径无锁。内存池值得采用的理由是**减少系统调用与内存碎片、分配延迟可预测**，
 > 而不是单纯的单次分配更快。
+
+**指令级归因**（`prof_memory_pool` + callgrind，每次 alloc+free 配对的指令数）：
+
+| 路径                          | 指令/对 | 占比 |
+| ----------------------------- | ------- | ---- |
+| 系统 `malloc` + `free`        | 57      | —    |
+| 池：`pthread_mutex_lock`      | 59      | 25%  |
+| 池：`pthread_mutex_unlock`    | 52      | 22%  |
+| 池：分桶核心逻辑 + 调用方     | 124     | 53%  |
+| **池合计**                    | **235** | 4.1× |
+
+> 关键证据：把 `kThreadSafe = false` 后单独测指令数，池为 **4,296,786**、
+> `malloc` 为 **4,203,988**——**相差 0.2%，基本持平**。也就是说单线程下
+> 池与 malloc 的差距**几乎全部来自锁**：每次分配/释放各取一次锁，
+> 而无争用的 `std::mutex` lock+unlock 实测约 **7.9 ns**，
+> 已接近 glibc 整个 malloc+free 的成本（约 4.3 ns）。
+>
+> 这也解释了为什么分桶加锁（见下）只在跨尺寸并发时有收益：单线程下
+> 无论锁粒度多细，每次操作的加解锁成本都省不掉。要真正消除它需要
+> thread-local 缓存（代价是跨线程归还的所有权问题，尚未实现）。
+>
+> 复现方式：
+> ```bash
+> xmake                                   # 构建 prof_memory_pool
+> valgrind --tool=callgrind --callgrind-out-file=/tmp/cg.out \
+>          ./build/linux/x86_64/release/prof_memory_pool pool 20000 32
+> callgrind_annotate --auto=no /tmp/cg.out
+> ```
 
 **多线程吞吐**（4 线程 × 5 万次，见 `bench_memory_pool` 的 `multithread_throughput`）：
 

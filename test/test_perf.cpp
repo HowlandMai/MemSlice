@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <thread>
 #include <vector>
 
 #include "memory_pool/allocator.hpp"
@@ -181,4 +182,68 @@ MEMSLICE_CASE(perf, stl_allocator_path) {
 
   MEMSLICE_EXPECT(pool_ns > 0.0);
   MEMSLICE_EXPECT(std_ns > 0.0);
+}
+
+// 多线程吞吐：分桶加锁的目标场景。
+// 各线程使用不同尺寸 -> 命中不同桶 -> 应基本线性扩展；
+// 同尺寸 -> 争用同一把桶锁 -> 受同桶争用限制。两者对比可验证锁粒度的效果。
+MEMSLICE_CASE(perf, multithread_throughput) {
+  constexpr int kThreads = 4;
+  constexpr int kOpsPerThread = 50000;
+
+  // 场景 A：各线程固定不同尺寸（无跨桶争用）
+  {
+    MemoryPool<> pool;
+    // 预热所有相关桶
+    for (int t = 0; t < kThreads; ++t) {
+      void *p = pool.Allocate(8 + static_cast<size_t>(t) * 8);
+      pool.Deallocate(p);
+    }
+
+    const double ns = MeasureNs(3, [&pool] {
+      std::vector<std::thread> threads;
+      threads.reserve(kThreads);
+      for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&pool, t] {
+          const size_t size = 8 + static_cast<size_t>(t) * 8;
+          for (int i = 0; i < kOpsPerThread; ++i) {
+            void *p = pool.Allocate(size);
+            g_sink = p;
+            pool.Deallocate(p);
+          }
+        });
+      }
+      for (auto &th: threads) {
+        th.join();
+      }
+    });
+    MEMSLICE_INFO("4 threads, distinct sizes: " << ns / (kThreads * kOpsPerThread) << " ns/op (per-bucket lock path)");
+    MEMSLICE_EXPECT(ns > 0.0);
+  }
+
+  // 场景 B：所有线程同一尺寸（争用同一把桶锁）
+  {
+    MemoryPool<> pool;
+    void *warm = pool.Allocate(32);
+    pool.Deallocate(warm);
+
+    const double ns = MeasureNs(3, [&pool] {
+      std::vector<std::thread> threads;
+      threads.reserve(kThreads);
+      for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&pool] {
+          for (int i = 0; i < kOpsPerThread; ++i) {
+            void *p = pool.Allocate(32);
+            g_sink = p;
+            pool.Deallocate(p);
+          }
+        });
+      }
+      for (auto &th: threads) {
+        th.join();
+      }
+    });
+    MEMSLICE_INFO("4 threads, same size: " << ns / (kThreads * kOpsPerThread) << " ns/op (contended single bucket)");
+    MEMSLICE_EXPECT(ns > 0.0);
+  }
 }

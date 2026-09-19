@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-// 边界与防御性守卫：二级分配器越界请求、头部记账下的尺寸误用。
+// 边界与防御性守卫：二级分配器越界请求、Reallocate 尺寸误报不再崩溃
+// （DEF-001 回归）、无尺寸释放、空指针/零尺寸释放，以及调试期哨兵。
+// 哨兵用例（sentinel_*）仅在启用 kDebugChecks 时真正执行，否则自我跳过。
 
 #include "test_utils.hpp"
 

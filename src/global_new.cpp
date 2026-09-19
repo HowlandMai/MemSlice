@@ -8,8 +8,9 @@
 #include <new>
 
 // 重载全局 new 以使用内存池。所有分配都在用户指针前放置自描述头部
-// （记录真实基址 / 底层块容量 / 请求尺寸 / 来源），因此所有 delete 形态
-// 都只需指针即可正确回收，尺寸参数一律忽略。
+// （记录真实基址，以及打包了块容量 / 来源 / 分配状态 / 魔数的机器字），
+// 因此所有 delete 形态都只需指针即可正确回收，尺寸参数一律忽略。
+// 头部布局详见 include/memory_pool/block.hpp 的 detail::RawHeader。
 void *operator new(std::size_t size) {
   return memory_pool::detail::AllocateWithHeader(size, alignof(std::max_align_t));
 }

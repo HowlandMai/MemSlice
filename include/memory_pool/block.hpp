@@ -18,7 +18,7 @@ namespace memory_pool {
 
   namespace detail {
     // 内存来源：决定回收时回到哪个分配器。
-    // 取值需为 2 的幂，以便折进容量字段的低位（见 kCapacityBits）。
+    // 取值需落在 kSourceBits 位内（见下方打包布局），以便与容量共存于一个机器字。
     enum class BlockSource : std::uintptr_t {
       kSecondLevel = 0, // 来自二级分配器（按桶复用）
       kFirstLevel = 1, // 来自一级分配器（直接 free 给系统）
@@ -105,7 +105,10 @@ namespace memory_pool {
       return UnpackSource(HeaderOf(const_cast<void *>(p))->packed);
     }
 
-    // ---- 调试期校验（仅在调试构建启用；发布构建下这些函数为空操作）----
+    // ---- 调试期校验辅助 ----
+    // 注意：下面这些函数本身始终会求值（它们只是读头部若干位），
+    // 「启用/关闭」由调用方 pool.hpp 的 if constexpr (kDebugChecksConfig<Config>)
+    // 决定——关闭时调用点整段不生成代码，因此默认构建无任何校验开销。
 
     // 判定头部是否「看起来像」本池写下的：魔数位必须匹配。
     // 说明：这是启发式判断，无法保证 100% 区分「用户数据恰好撞上魔数」与真实头部，

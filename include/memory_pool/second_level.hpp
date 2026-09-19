@@ -151,7 +151,8 @@ namespace memory_pool {
       const size_t aligned_size = RoundUp(block_bytes);
       assert(aligned_size <= Config::kMaxSmallObjectBytes);
       if (aligned_size > Config::kMaxSmallObjectBytes) {
-        // 调试构建已断言；发布构建下丢弃错误请求，避免越界
+        // 越界请求在调试构建下先触发上面的断言；两种构建下都会直接丢弃该请求，
+        // 以保证 free_lists_ 不被越界索引（代价是该块不回收，见 README 注意事项）
         return;
       }
 

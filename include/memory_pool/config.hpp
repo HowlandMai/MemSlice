@@ -20,8 +20,9 @@ namespace memory_pool {
   //   - 未定义该宏时默认**关闭**，即「零开销」是默认行为，需要诊断时显式打开；
   //   - 也可通过自定义 Config 的 kDebugChecks 逐池覆盖。
   //
-  // 打开后的行为：释放前校验头部魔数与分配状态位，可捕获重复释放、野指针、
-  // 头部被越界写坏等误用（详见 block.hpp / pool.hpp）。代价是每次释放多两次比较。
+  // 打开后的行为：释放前做三项校验（头部魔数、分配状态位、基址非空），可捕获
+  // 重复释放、释放野指针、头部被越界写坏等误用（详见 block.hpp / pool.hpp）。
+  // 代价是每次释放多三次比较；关闭时这些检查整段不生成代码。
   // ---------------------------------------------------------------------------
 #if defined(MEMSLICE_DEBUG_CHECKS)
   constexpr bool kDebugChecksDefault = (MEMSLICE_DEBUG_CHECKS != 0);

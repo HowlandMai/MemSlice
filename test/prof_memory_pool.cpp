@@ -4,9 +4,10 @@
 // 时间测量只能给出比值，这里给出**每条路径每对 alloc/free 的指令数**，
 // 从而把开销归因到具体函数（锁 / 核心逻辑 / 调用方）。
 //
-// 用法：
-//   xmake run prof_memory_pool pool   20000 32
-//   xmake run prof_memory_pool malloc 20000 32
+// 用法（直接运行产物；注意 xmake run 会把多余词当目标名解析、
+// 不会作为参数传给程序，因此不要用 `xmake run prof_memory_pool pool`）：
+//   ./build/linux/x86_64/release/prof_memory_pool pool   20000 32
+//   ./build/linux/x86_64/release/prof_memory_pool malloc 20000 32
 //   valgrind --tool=callgrind --callgrind-out-file=/tmp/cg.out \
 //            ./build/linux/x86_64/release/prof_memory_pool pool 20000 32
 //

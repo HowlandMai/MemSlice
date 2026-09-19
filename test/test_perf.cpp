@@ -1,11 +1,18 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-// 性能基准（内存池 vs 系统 malloc）。
+// 性能基准，共 5 个用例：
+//   fixed_size_high_frequency  固定 32B 高频分配/释放（池最有利的场景）
+//   mixed_size                 1..64B 尺寸混排（分桶命中率下降的对照）
+//   batch_survive_then_free    批量同时存活后统一释放（含指针唯一性校验）
+//   stl_allocator_path         Allocator<T> vs std::allocator 经容器使用
+//   multithread_throughput     4 线程：各命中不同桶 vs 争用同一把桶锁
 //
 // 关于断言的取舍：这里**不**断言「池一定更快」。实测表明现代 glibc 在
 // 固定小对象的 malloc+free 上极快（tcache 命中，循环甚至会被优化器整体消除），
 // 因此任何「池更快」的断言在本平台都不成立，写进测试只会变成假绿或长期红灯。
+// 单线程下池慢于 malloc 的原因已定位为锁开销，详见 README 性能说明与
+// prof_memory_pool 的指令级归因。
 //
 // 本文件断言的是**基准自身的有效性**，即：
 //   - 每次操作耗时必须为有限正数（防止循环被优化掉导致 0 ns 的假绿）；

@@ -65,7 +65,8 @@ MemSlice 是一个用 C++20 编写的现代内存池库。它采用经典的两�
 - **STL 分配器兼容**：内置可复用的 `Allocator<T>`。
 - **可选全局重载**：链接 `src/global_new.cpp`（xmake 目标 `memory_pool_global`）即可启用全局 `new`/`delete` 加速（含 over-aligned 对齐重载）；不链接则不生效。
 - **线程安全可选**：`Config::kThreadSafe` 默认开启；二级分配器**按桶独立加锁**（不同尺寸的分配/释放互不阻塞），可整体关闭以换取单线程零锁开销。
-- **自描述头部**：每次分配在用户指针前放置 16 字节头部，记录真实基址与「块容量 | 来源」打包字。
+- **自描述头部**：每次分配在用户指针前放置 16 字节头部，记录真实基址，以及打包进一个机器字的
+  「块容量 | 来源 | 分配状态 | 魔数」（后两者供调试期哨兵校验使用）。
   因此释放无需尺寸、重新分配无需旧尺寸——旧版「尺寸必须成对」的契约被彻底取消（见「注意事项」）。
 - **资源可回收**：局部内存池实例析构时回收所有向系统申请的 chunk，不泄漏；无参 `delete` 亦能正确释放（全局池单例刻意不析构，见「注意事项」）。
 - **调试期哨兵（可选、零开销）**：显式开启后，释放前校验头部魔数与分配状态位，把重复释放/野指针/头部损坏从静默堆损坏变成可定位的显式中止；默认关闭，该分支被 `if constexpr` 完全编译掉。
@@ -178,7 +179,7 @@ xmake run test_memory_pool              # 直接运行：全部用例
 xmake run test_memory_pool basic        # 只运行 basic 组
 xmake run test_memory_pool --quiet      # 静默模式
 xmake run bench_memory_pool             # 性能基准
-xmake run prof_memory_pool pool 20000 32 # 剖析目标（配 callgrind 使用）
+./build/linux/x86_64/release/prof_memory_pool pool 20000 32  # 剖析目标（配 callgrind 使用）
 # 或直接运行产物：
 ./build/linux/x86_64/release/test_memory_pool
 ```
@@ -195,7 +196,7 @@ xmake run prof_memory_pool pool 20000 32 # 剖析目标（配 callgrind 使用�
 | `new_delete`  | `new` / `delete`、`new[]` / `delete[]` 重载、over-aligned、STL 容器 |
 | `guards`      | 越界守卫、尺寸误报不再崩溃（DEF-001）、无尺寸释放、调试哨兵   |
 | `concurrency` | 4 线程共享一池、`kThreadSafe = false` 配置路径               |
-| `perf`        | 内存池 vs 系统 `malloc` 基准（仅 `bench_memory_pool`）        |
+| `perf`        | 5 组基准：固定尺寸/混排/批量存活/STL 分配器/多线程（仅 `bench_memory_pool`） |
 
 > 回归用例（此前的缺陷已在对应用例中固化）：零字节分配无符号下溢、over-aligned 分配与分配器对齐、
 > 二级分配器越界请求、`Reallocate` 尺寸误报导致的堆损坏（DEF-001）、无尺寸释放、并发安全。
@@ -292,6 +293,7 @@ pool.Allocate(64);  // 按 16 字节对齐分桶
 | `kAlignSize`           | 8      | 内存对齐大小（必须是 2 的幂）                      |
 | `kDefaultNobjs`        | 20     | 桶耗尽时一次性向系统申请的对象数量                 |
 | `kThreadSafe`          | true   | 二级分配器是否加锁（多线程共享同一池时请保持开启） |
+| `kDebugChecks`         | false  | 释放前哨兵校验（重复释放/野指针/头部损坏），见「调试期哨兵」 |
 
 > 配置合法性由 `static_assert` 校验：`kAlignSize` 必须为 2 的幂，且 `kMaxSmallObjectBytes` 必须是 `kAlignSize` 的整数倍。
 

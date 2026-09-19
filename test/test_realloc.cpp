@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-// 重新分配（Reallocate）的数据保全与跨级切换。
+// 重新分配（Reallocate）：数据保全、跨级切换（小↔大）、反复增长的链条。
 
 #include "test_utils.hpp"
 

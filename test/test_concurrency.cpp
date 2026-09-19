@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Howland Mai
 // 依据 MIT 许可证发布，详见 LICENSE 文件。
 
-// 并发安全与线程安全开关。
+// 并发安全：多线程共享同一池、kThreadSafe=false 配置路径。
 
 #include "test_utils.hpp"
 

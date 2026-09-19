@@ -21,8 +21,11 @@ namespace memory_pool {
   // 内存池主类：按请求大小在两级分配器之间路由，并统一使用「自描述头部」记账。
   //
   // 记账约定（见 block.hpp 的 detail::RawHeader）：
-  //   - 每一次分配都在用户指针正前方放置 16 字节头部，记录真实基址与「容量 | 来源」；
-  //   - 因此 Deallocate 只需指针、Reallocate 只需新尺寸——调用方无需保证尺寸成对。
+  //   - 每一次分配都在用户指针正前方放置 16 字节头部，记录真实基址，以及
+  //     打包进一个机器字的「块容量 | 来源 | 分配状态 | 魔数」；
+  //   - 因此 Deallocate 只需指针、Reallocate 只需新尺寸——调用方无需保证尺寸成对；
+  //   - 其中的状态位与魔数仅供调试期哨兵校验（见 config.hpp 的 kDebugChecks），
+  //     不启用校验时它们仍会被写入，但不会被读取。
   template<typename Config = DefaultConfig>
   class MemoryPool {
   private:
@@ -95,7 +98,7 @@ namespace memory_pool {
       }
     }
 
-    // 释放前的诊断检查（仅调试构建启用）
+    // 释放前的诊断检查（由 FreeWithHeader 在 kDebugChecks 开启时调用；共三项）
     static void CheckBeforeFree(void *p, detail::RawHeader *h) {
       // 1) 头部魔数：识别野指针、未初始化指针、或头部被越界写坏
       if (!detail::HeaderLooksValid(p)) {

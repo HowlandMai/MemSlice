@@ -42,7 +42,8 @@ int main() {
   // 本池
   MemoryPool<> pool;
   std::vector<void *> live(kLive, nullptr);
-  for (auto &p: live) p = pool.Allocate(64);
+  for (auto &p: live)
+    p = pool.Allocate(64);
 
   const double pool_ns = TimePerOp(
       [&] {
@@ -54,12 +55,14 @@ int main() {
         }
       },
       kOps);
-  for (auto *p: live) pool.Deallocate(p);
+  for (auto *p: live)
+    pool.Deallocate(p);
   std::printf("  本池（分桶加锁）        : %6.2f ns/op\n", pool_ns);
 
   // glibc malloc
   std::vector<void *> live2(kLive, nullptr);
-  for (auto &p: live2) p = std::malloc(64);
+  for (auto &p: live2)
+    p = std::malloc(64);
   const double malloc_ns = TimePerOp(
       [&] {
         for (std::size_t i = 0; i < kOps; ++i) {
@@ -70,7 +73,8 @@ int main() {
         }
       },
       kOps);
-  for (auto *p: live2) std::free(p);
+  for (auto *p: live2)
+    std::free(p);
   std::printf("  glibc malloc/free      : %6.2f ns/op\n", malloc_ns);
 
   std::printf("\n  比值（本池 / malloc）   : %6.2f x\n", pool_ns / malloc_ns);

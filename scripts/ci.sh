@@ -63,7 +63,7 @@ echo "告警数：$W"
 # ---------------------------------------------------------------- 4. 格式
 section "4. clang-format"
 BAD=0
-for f in include/mempool_lab.hpp include/mempool_lab/*.hpp src/*.cpp test/*.hpp test/*.cpp; do
+for f in include/mempool_lab.hpp include/mempool_lab/*.hpp src/*.cpp test/*.hpp test/*.cpp bench/*.cpp; do
   [ -f "$f" ] || continue
   clang-format --dry-run -Werror "$f" >/dev/null 2>&1 || { echo "未格式化：$f"; BAD=$((BAD+1)); }
 done

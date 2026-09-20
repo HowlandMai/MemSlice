@@ -1,0 +1,9 @@
+# 构建产物
+build/
+.xmake/
+.cache/
+compile_commands.json
+
+# 测试残留
+vgcore.*
+core

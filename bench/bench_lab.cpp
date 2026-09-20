@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "mempool_lab/allocator.hpp"
 #include "mempool_lab/pool.hpp"
 
 using namespace mempool_lab;
@@ -78,6 +79,25 @@ int main() {
   std::printf("  glibc malloc/free      : %6.2f ns/op\n", malloc_ns);
 
   std::printf("\n  比值（本池 / malloc）   : %6.2f x\n", pool_ns / malloc_ns);
+
+  // STL 容器路径：vector 通过 Allocator<T> 走池
+  {
+    std::printf("\n--- STL 容器路径（vector<int> 反复 push/pop）---\n");
+    constexpr std::size_t kRounds = 2000;
+    const auto t0 = Clock::now();
+    for (std::size_t r = 0; r < kRounds; ++r) {
+      std::vector<int, mempool_lab::Allocator<int>> v;
+      for (int i = 0; i < 64; ++i) {
+        v.push_back(i);
+      }
+      g_sink = v.data();
+    }
+    const auto t1 = Clock::now();
+    const double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / kRounds;
+    std::printf("  vector<int> 构造+填充+析构 : %6.2f us/轮\n", us);
+    std::printf("  （说明：容器路径额外承担 Allocator 适配与 vector 自身开销，\n");
+    std::printf("    与上面的裸分配数字不可直接比较。）\n");
+  }
   std::printf("\n  说明：本池单线程下慢于 glibc malloc。原因与归因见\n");
   std::printf("        docs/04-performance-notes.md。\n");
   return 0;

@@ -100,6 +100,7 @@ mempool-lab/
 │   ├── config.hpp             # 配置参数与编译期开关
 │   ├── block.hpp              # 头部布局、容量编解码、对齐工具
 │   ├── free_list.hpp          # 空闲链表（分桶 + 加锁）
+│   ├── allocator.hpp          # STL 分配器适配（含超对齐处理）
 │   └── pool.hpp               # 门面：Allocate/Deallocate/Reallocate/Audit
 ├── src/
 │   └── default_pool.cpp       # 全局池单例
@@ -110,14 +111,16 @@ mempool-lab/
 │   ├── test_realloc.cpp       # 重新分配的数据保全
 │   ├── test_audit.cpp         # 审计：防误报 + 防漏报（注入错误）
 │   ├── test_fuzz.cpp          # 随机长跑 + 指针唯一性
-│   └── test_concurrency.cpp   # 多线程 + 跨线程归还
+│   ├── test_concurrency.cpp   # 多线程 + 跨线程归还
+│   └── test_allocator.cpp     # STL 容器、rebind、超对齐
 ├── docs/
 │   ├── 00-overview.md         # 本文件的思想：项目要讲什么
 │   ├── 01-principles.md       # 原理：为什么这样设计（配图）
 │   ├── 02-design-choices.md   # 设计权衡：每个选择的代价
 │   ├── 03-building-log.md     # 构建日志：踩过的坑与修正（原创性所在）
 │   ├── 04-performance-notes.md# 性能分析：数据与归因
-│   └── 05-verification.md     # 验证方法：如何证明它是对的
+│   ├── 05-verification.md     # 验证方法：如何证明它是对的
+│   └── 06-allocator.md        # STL 分配器：两个容易踩的坑
 └── scripts/ci.sh              # 全量门禁
 ```
 
@@ -138,8 +141,8 @@ mempool-lab/
 ## 6. 规模控制
 
 - 核心实现：约 500 行（含注释）
-- 测试：约 400 行
-- 文档：约 1500 行（本项目文档占比刻意高于代码）
+- 测试：约 780 行
+- 文档：约 2500 行（本项目文档占比刻意高于代码）
 
 **刻意不做的事**：线程本地缓存、内存整理/合并、可配置分配策略、
 mmap 直连、超对齐的复杂处理。它们会让代码膨胀，但不增加核心理解。

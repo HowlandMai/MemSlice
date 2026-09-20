@@ -36,6 +36,7 @@
 | **批量申请 chunk** | 一次向系统要一批，摊薄系统调用 |
 | **分桶加锁** | 不同尺寸的并发操作互不阻塞 |
 | **内部不变量审计** | `Audit()` 让池能自证账目是否自洽 |
+| **STL 分配器** | `Allocator<T>` 可直接用于 `std::vector` / `std::list` / `std::map` |
 
 ## 快速上手
 
@@ -60,6 +61,19 @@ int main() {
     }
   }
 }
+```
+
+与标准容器配合：
+
+```cpp
+#include "mempool_lab/allocator.hpp"
+
+std::vector<int, mempool_lab::Allocator<int>> v;
+std::list<std::string, mempool_lab::Allocator<std::string>> l;
+
+// 超对齐类型也支持（内部回落到系统分配以记录偏移，见文档）
+struct alignas(64) Vec4 { float v[4]; };
+std::vector<Vec4, mempool_lab::Allocator<Vec4>> simd;
 ```
 
 ## 构建与测试
@@ -97,6 +111,7 @@ xmake build bench_mempool_lab
 | [03 · 构建日志](docs/03-building-log.md) | **实际踩到的缺陷**：症状→定位→根因→修法 |
 | [04 · 性能分析](docs/04-performance-notes.md) | 实测数据与归因（为什么打不过 glibc） |
 | [05 · 验证方法](docs/05-verification.md) | **如何证明一个池是对的**——六层验证体系 |
+| [06 · STL 分配器](docs/06-allocator.md) | 接入标准容器；相等性语义与超对齐两个坑 |
 
 建议阅读顺序：01 → 02 → 05 → 03 → 04。
 
@@ -110,6 +125,7 @@ mempool-lab/
 │   ├── block.hpp                  # 头部布局、位域编解码、对齐工具
 │   ├── free_list.hpp              # 二级分配器：分桶空闲链表 + chunk 管理
 │   ├── audit.hpp                  # 不变量审计的原语
+│   ├── allocator.hpp              # STL 分配器适配（含超对齐处理）
 │   └── pool.hpp                   # 门面：路由、头部记账、审计
 ├── src/default_pool.cpp           # 全局池单例
 ├── test/
@@ -118,7 +134,8 @@ mempool-lab/
 │   ├── test_realloc.cpp           # 重新分配的数据保全
 │   ├── test_audit.cpp             # 审计：防误报 + 防漏报
 │   ├── test_fuzz.cpp              # 随机长跑与指针唯一性
-│   └── test_concurrency.cpp       # 多线程与跨线程归还
+│   ├── test_concurrency.cpp       # 多线程与跨线程归还
+│   ├── test_allocator.cpp         # STL 分配器：容器、rebind、超对齐
 ├── bench/bench_lab.cpp            # 简易基准
 ├── docs/                          # 学习文档（见上表）
 └── scripts/ci.sh                  # 全量门禁

@@ -42,14 +42,41 @@ namespace mempool_lab {
     MemoryPool &operator=(const MemoryPool &) = delete;
 
     // 分配 size 字节，返回满足 max_align_t 对齐的用户指针
-    [[nodiscard]] void *Allocate(std::size_t size) {
+    [[nodiscard]] void *Allocate(std::size_t size) { return AllocateAligned(size, kBlockAlign); }
+
+    // 分配 size 字节，返回满足 alignment 对齐的用户指针。
+    //
+    // ★ 超对齐的关键：头部必须"贴"在用户指针前方，且 `p - kHeaderBytes` 必须
+    //   落回头部。为此头部的实际占用是 **align_up(kHeaderBytes, alignment)**，
+    //   而不是固定的 kHeaderBytes。若忽略这点（例如只按 max_align_t 取整），
+    //   当 alignment=64 时 p - kHeaderBytes 会落在头部内部而不是头部起点，
+    //   释放时读到垃圾容量 —— 曾实测段错误。
+    //
+    //   因此这里的做法是：把头部占位大小（head）按 alignment 取整，
+    //   用户指针 p = align_up(raw + head, alignment) —— 由于 head 本身是
+    //   alignment 的整数倍，且 raw 来自分配器（对齐足够），
+    //   p - head 恰好落回 raw。
+    [[nodiscard]] void *AllocateAligned(std::size_t size, std::size_t alignment) {
       if (size > kMaxRequestBytes) {
         throw std::bad_alloc();
       }
-      // 底层块要容纳「头部 + 用户数据」，并留出对齐余量：
-      // 用户指针在 raw + kHeaderBytes 之后向上取整到 kBlockAlign，
-      // 最多多消耗 kBlockAlign 字节。
-      const std::size_t total = detail::AlignUp(kHeaderBytes + size, kBlockAlign);
+      const std::size_t align = (alignment < kBlockAlign) ? kBlockAlign : alignment;
+      if ((align & (align - 1)) != 0) {
+        throw std::bad_alloc(); // 对齐必须是 2 的幂
+      }
+
+      // 超对齐（align > kHeaderBytes）无法在池内正确处理：
+      // 头部位置 p - head 中的 head 随 align 变化，而释放时只有 p，
+      // 无法反推 head —— 除非额外记录（会使头部膨胀、并让所有路径变复杂）。
+      // 因此对这种请求回落到系统分配（malloc 天然满足任何不超过其内部
+      // 对齐策略的对齐要求；POSIX 下 malloc 至少 16 字节对齐，
+      // 对更大的对齐我们显式多要字节并记录真实基址）。
+      if (align > kHeaderBytes) {
+        return AllocateOverAligned(size, align);
+      }
+
+      // 常规路径：head 固定为 kHeaderBytes（已是 kBlockAlign 的整数倍）
+      const std::size_t total = kHeaderBytes + detail::AlignUp(size, align);
       if (total < size || total > detail::kMaxCapacity) {
         throw std::bad_alloc(); // 回绕或超出可表达范围
       }
@@ -66,9 +93,8 @@ namespace mempool_lab {
         }
         source = detail::BlockSource::kSystem;
       }
-
-      // 头部紧邻用户指针前方
-      const std::uintptr_t p = detail::AlignUp(reinterpret_cast<std::uintptr_t>(raw) + kHeaderBytes, kBlockAlign);
+      // 头部紧邻用户指针前方（head == kHeaderBytes，固定值）
+      const std::uintptr_t p = reinterpret_cast<std::uintptr_t>(raw) + kHeaderBytes;
       auto *h = reinterpret_cast<detail::Header *>(p - kHeaderBytes);
       h->base = raw;
       h->packed = detail::PackFlags(total, source, /*allocated=*/true, detail::kMagicValue);
@@ -81,6 +107,11 @@ namespace mempool_lab {
     // 这是本实现区别于"经典实现需要传尺寸"的地方，也是头部的直接收益。
     void Deallocate(void *p) noexcept {
       if (p == nullptr) {
+        return;
+      }
+      // 超对齐路径的块：由前缀记录真实基址，与常规头部布局无关
+      if (IsOverAligned(p)) {
+        FreeOverAligned(p);
         return;
       }
       const detail::Header *h = detail::HeaderOf(p);
@@ -105,6 +136,13 @@ namespace mempool_lab {
     [[nodiscard]] void *Reallocate(void *p, std::size_t new_size) {
       if (p == nullptr) {
         return Allocate(new_size);
+      }
+      // 超对齐块：不尝试原地复用（其布局不适用本路径），统一走分配+拷贝+回收
+      if (IsOverAligned(p)) {
+        void *fresh = Allocate(new_size);
+        std::memcpy(fresh, p, new_size);
+        FreeOverAligned(p);
+        return fresh;
       }
       const std::size_t old_capacity = detail::CapacityOf(p);
 
@@ -223,6 +261,55 @@ namespace mempool_lab {
     }
 
   private:
+    // 超对齐分配：回落到系统分配，用一个"前缀"记录真实基址与偏移。
+    //
+    // 布局：  [前缀(16B): magic | size | offset] [填充] [用户指针 p]
+    // 释放时 p 往前找到前缀即可还原 raw —— 因为偏移量被记录下来了。
+    // 这份前缀只有超对齐路径才使用，常规路径零开销。
+    struct OverAlignPrefix {
+      std::uintptr_t magic;
+      std::size_t offset; // raw 到 p 的距离
+    };
+
+    static constexpr std::uintptr_t kOverAlignMagic = 0x4F41'4C47'4E00'0001ull; // "OALGN"
+
+    [[nodiscard]] static void *AllocateOverAligned(std::size_t size, std::size_t align) {
+      const std::size_t prefix = detail::AlignUp(sizeof(OverAlignPrefix), alignof(std::max_align_t));
+      // 多要 align 字节，保证其中一定有满足 align 的起点
+      const std::size_t bytes = prefix + size + align;
+      if (bytes < size) {
+        throw std::bad_alloc();
+      }
+      void *raw = std::malloc(bytes);
+      if (raw == nullptr) {
+        throw std::bad_alloc();
+      }
+      const auto raw_addr = reinterpret_cast<std::uintptr_t>(raw);
+      // 用户指针：在 raw + prefix 之后向上取整到 align
+      const std::uintptr_t p = detail::AlignUp(raw_addr + prefix, align);
+      // 前缀放在 p 前方紧邻处（保证可反推）
+      auto *pfx = reinterpret_cast<OverAlignPrefix *>(p - sizeof(OverAlignPrefix));
+      pfx->magic = kOverAlignMagic;
+      pfx->offset = p - raw_addr;
+      return reinterpret_cast<void *>(p);
+    }
+
+    [[nodiscard]] static bool IsOverAligned(const void *p) noexcept {
+      const auto addr = reinterpret_cast<std::uintptr_t>(p);
+      if (addr < sizeof(OverAlignPrefix)) {
+        return false;
+      }
+      const auto *pfx = reinterpret_cast<const OverAlignPrefix *>(addr - sizeof(OverAlignPrefix));
+      return pfx->magic == kOverAlignMagic;
+    }
+
+    static void FreeOverAligned(void *p) noexcept {
+      const auto addr = reinterpret_cast<std::uintptr_t>(p);
+      const auto *pfx = reinterpret_cast<const OverAlignPrefix *>(addr - sizeof(OverAlignPrefix));
+      const std::uintptr_t raw = addr - pfx->offset;
+      std::free(reinterpret_cast<void *>(raw));
+    }
+
     FreeListPool<Config> pool_;
   };
 

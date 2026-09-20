@@ -27,6 +27,7 @@ target("test_mempool_lab")
     set_kind("binary")
     add_deps("mempool_lab")
     add_files("test/test_main.cpp", "test/test_basic.cpp", "test/test_realloc.cpp",
-              "test/test_audit.cpp", "test/test_fuzz.cpp", "test/test_concurrency.cpp")
+              "test/test_audit.cpp", "test/test_fuzz.cpp", "test/test_concurrency.cpp",
+              "test/test_allocator.cpp")
     add_includedirs("test")
     add_tests("default", {runargs = {"--quiet"}})

@@ -6,6 +6,7 @@
 #ifndef MEMPOOL_LAB_HPP_
 #define MEMPOOL_LAB_HPP_
 
+#include "mempool_lab/allocator.hpp"
 #include "mempool_lab/audit.hpp"
 #include "mempool_lab/block.hpp"
 #include "mempool_lab/config.hpp"

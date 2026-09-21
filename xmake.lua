@@ -17,3 +17,11 @@ target("mempool_lab")
     if is_plat("linux") then
         add_syslinks("pthread")
     end
+
+-- 测试：xmake test 门禁（glob 覆盖 test/ 下所有用例文件）
+target("test_mempool_lab")
+    set_kind("binary")
+    add_deps("mempool_lab")
+    add_files("test/test_*.cpp")
+    add_includedirs("test")
+    add_tests("default", {runargs = {"--quiet"}})

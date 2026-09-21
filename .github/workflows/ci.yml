@@ -1,0 +1,84 @@
+name: CI
+
+# 与 scripts/ci.sh 保持一致：本地能跑通的检查，CI 上也跑同一套。
+# 这样"在我机器上能过"与"在 CI 上能过"不是两回事。
+#
+# 说明：TSan 构建依赖 clang 的 -fsanitize=thread 运行时；
+# valgrind / clang-format 均在 ubuntu 默认源中可用。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld valgrind clang-format
+          clang++ --version
+          clang-format --version
+
+      - name: 安装 xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: 构建
+        run: xmake -y
+
+      - name: 运行测试
+        run: xmake test -y
+
+      - name: 完整用例（含并发与随机长跑）
+        run: ./build/linux/x86_64/release/test_mempool_lab --quiet
+
+      - name: 零告警检查
+        run: |
+          rm -rf build .xmake
+          xmake f --cxflags="-Wall -Wextra -Wpedantic" -y
+          out=$(xmake -r 2>&1 | grep -ci warning || true)
+          echo "warnings: $out"
+          test "$out" -eq 0
+
+      - name: 格式检查
+        run: |
+          bad=0
+          for f in include/mempool_lab.hpp include/mempool_lab/*.hpp src/*.cpp \
+                   test/*.hpp test/*.cpp bench/*.cpp; do
+            [ -f "$f" ] || continue
+            clang-format --dry-run -Werror "$f" || bad=1
+          done
+          test "$bad" -eq 0
+
+      - name: ASan + UBSan
+        run: |
+          clang++ -std=c++20 -O1 -g -fsanitize=address,undefined \
+            -I include -I test \
+            test/test_main.cpp test/test_basic.cpp test/test_realloc.cpp \
+            test/test_audit.cpp test/test_fuzz.cpp test/test_concurrency.cpp \
+            test/test_allocator.cpp src/default_pool.cpp -o /tmp/asan -pthread
+          ASAN_OPTIONS=detect_leaks=0 /tmp/asan --quiet
+
+      - name: TSan（多线程）
+        run: |
+          clang++ -std=c++20 -O1 -g -fsanitize=thread \
+            -I include -I test \
+            test/test_main.cpp test/test_basic.cpp test/test_realloc.cpp \
+            test/test_audit.cpp test/test_fuzz.cpp test/test_concurrency.cpp \
+            test/test_allocator.cpp src/default_pool.cpp -o /tmp/tsan -pthread
+          TSAN_OPTIONS=halt_on_error=1 /tmp/tsan --quiet
+
+      - name: valgrind
+        run: |
+          rm -rf build .xmake
+          xmake -y
+          valgrind --leak-check=full --error-exitcode=99 \
+            ./build/linux/x86_64/release/test_mempool_lab --quiet

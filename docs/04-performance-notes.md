@@ -14,9 +14,9 @@
 
 运行方式：
 
-```bash
-xmake build bench_mempool_lab
-./build/linux/x86_64/release/bench_mempool_lab
+```zsh
+xmake build bench_memslice
+./build/linux/x86_64/release/bench_memslice
 ```
 
 | 配置 | ns/op |
@@ -55,9 +55,9 @@ xmake build bench_mempool_lab
 
 时间测量给出比值，指令计数能把开销落到具体函数：
 
-```bash
+```zsh
 valgrind --tool=callgrind --callgrind-out-file=/tmp/cg.out \
-         ./build/linux/x86_64/release/bench_mempool_lab
+         ./build/linux/x86_64/release/bench_memslice
 callgrind_annotate --auto=no /tmp/cg.out | head -20
 ```
 

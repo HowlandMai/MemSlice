@@ -13,9 +13,9 @@
 #include <cstring>
 #include <vector>
 
-#include "mempool_lab/pool.hpp"
+#include "memslice/pool.hpp"
 
-using namespace mempool_lab;
+using namespace memslice;
 
 namespace {
 
@@ -72,7 +72,7 @@ namespace {
 
 } // namespace
 
-MEMPOOL_CASE(fuzz, randomized_long_run) {
+MEMSLICE_CASE(fuzz, randomized_long_run) {
   MemoryPool<> pool;
   Rng rng(20260920);
   std::vector<Live> live;
@@ -86,25 +86,25 @@ MEMPOOL_CASE(fuzz, randomized_long_run) {
       b.size = rng.Range(1, 600);
       b.tag = static_cast<unsigned char>(rng.Range(1, 200));
       b.ptr = pool.Allocate(b.size);
-      MEMPOOL_EXPECT(b.ptr != nullptr);
+      MEMSLICE_EXPECT(b.ptr != nullptr);
       Fill(b);
       live.push_back(b);
     } else if (action < 85) {
       const std::size_t i = rng.Range(0, static_cast<std::uint32_t>(live.size() - 1));
-      MEMPOOL_EXPECT(Intact(live[i]));
+      MEMSLICE_EXPECT(Intact(live[i]));
       pool.Deallocate(live[i].ptr);
       live[i] = live.back();
       live.pop_back();
     } else {
       const std::size_t i = rng.Range(0, static_cast<std::uint32_t>(live.size() - 1));
-      MEMPOOL_EXPECT(Intact(live[i]));
+      MEMSLICE_EXPECT(Intact(live[i]));
       const std::size_t ns = rng.Range(1, 600);
       const std::size_t keep = (ns < live[i].size) ? ns : live[i].size;
       void *np = pool.Reallocate(live[i].ptr, ns);
-      MEMPOOL_EXPECT(np != nullptr);
+      MEMSLICE_EXPECT(np != nullptr);
       const auto *src = static_cast<const unsigned char *>(np);
       for (std::size_t k = 0; k < keep; ++k) {
-        MEMPOOL_EXPECT(src[k] == static_cast<unsigned char>(live[i].tag + k));
+        MEMSLICE_EXPECT(src[k] == static_cast<unsigned char>(live[i].tag + k));
       }
       live[i].ptr = np;
       live[i].size = ns;
@@ -113,21 +113,21 @@ MEMPOOL_CASE(fuzz, randomized_long_run) {
     }
 
     // 每轮校验全部不变量
-    MEMPOOL_EXPECT(pool.Audit().ok);
+    MEMSLICE_EXPECT(pool.Audit().ok);
     for (const auto &b: live)
-      MEMPOOL_EXPECT(Intact(b));
-    MEMPOOL_EXPECT(Disjoint(live));
+      MEMSLICE_EXPECT(Intact(b));
+    MEMSLICE_EXPECT(Disjoint(live));
   }
 
   for (const auto &b: live) {
-    MEMPOOL_EXPECT(Intact(b));
+    MEMSLICE_EXPECT(Intact(b));
     pool.Deallocate(b.ptr);
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
-  MEMPOOL_INFO("随机长跑 3000 轮完成");
+  MEMSLICE_EXPECT(pool.Audit().ok);
+  MEMSLICE_INFO("随机长跑 3000 轮完成");
 }
 
-MEMPOOL_CASE(fuzz, same_size_churn) {
+MEMSLICE_CASE(fuzz, same_size_churn) {
   MemoryPool<> pool;
   std::vector<void *> v;
   v.reserve(100);
@@ -137,11 +137,11 @@ MEMPOOL_CASE(fuzz, same_size_churn) {
     // 存活期间两两不同
     for (std::size_t i = 0; i < v.size(); ++i) {
       for (std::size_t j = i + 1; j < v.size(); ++j)
-        MEMPOOL_EXPECT(v[i] != v[j]);
+        MEMSLICE_EXPECT(v[i] != v[j]);
     }
     for (auto *p: v)
       pool.Deallocate(p);
     v.clear();
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
+  MEMSLICE_EXPECT(pool.Audit().ok);
 }

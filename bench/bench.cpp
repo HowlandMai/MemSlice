@@ -12,10 +12,10 @@
 #include <cstdlib>
 #include <vector>
 
-#include "mempool_lab/allocator.hpp"
-#include "mempool_lab/pool.hpp"
+#include "memslice/allocator.hpp"
+#include "memslice/pool.hpp"
 
-using namespace mempool_lab;
+using namespace memslice;
 using Clock = std::chrono::steady_clock;
 
 namespace {
@@ -37,7 +37,7 @@ int main() {
   constexpr std::size_t kOps = 200000;
   constexpr std::size_t kLive = 64;
 
-  std::printf("mempool-lab 简易基准（%zu 次分配+释放，%zu 块同时存活）\n", kOps, kLive);
+  std::printf("MemSlice 简易基准（%zu 次分配+释放，%zu 块同时存活）\n", kOps, kLive);
   std::printf("========================================================\n\n");
 
   // 本池
@@ -86,7 +86,7 @@ int main() {
     constexpr std::size_t kRounds = 2000;
     const auto t0 = Clock::now();
     for (std::size_t r = 0; r < kRounds; ++r) {
-      std::vector<int, mempool_lab::Allocator<int>> v;
+      std::vector<int, memslice::Allocator<int>> v;
       for (int i = 0; i < 64; ++i) {
         v.push_back(i);
       }

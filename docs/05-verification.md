@@ -26,12 +26,12 @@
 最基础的一层，验证"给定输入，行为是否符合预期"。
 
 ```cpp
-MEMPOOL_CASE(basic, memory_is_reused) {
+MEMSLICE_CASE(basic, memory_is_reused) {
   MemoryPool<> pool;
   void *a = pool.Allocate(64);
   pool.Deallocate(a);
   void *b = pool.Allocate(64);
-  MEMPOOL_EXPECT(a == b);   // 释放后同尺寸应复用同一地址（LIFO 链表）
+  MEMSLICE_EXPECT(a == b);   // 释放后同尺寸应复用同一地址（LIFO 链表）
 }
 ```
 
@@ -52,15 +52,15 @@ struct Rng {                    // xorshift32：确定性，跨平台一致
   std::uint32_t Next() { ... }
 };
 
-MEMPOOL_CASE(fuzz, randomized_long_run) {
+MEMSLICE_CASE(fuzz, randomized_long_run) {
   Rng rng(20260920);            // ← 固定种子，失败可复现
   for (int round = 0; round < 3000; ++round) {
     // 随机选：分配 / 释放 / 重分配
     ...
     // 每轮校验三件事
-    MEMPOOL_EXPECT(pool.Audit().ok);          // ① 池内部账目
-    for (const auto &b: live) MEMPOOL_EXPECT(Intact(b));   // ② 用户数据未被破坏
-    MEMPOOL_EXPECT(Disjoint(live));           // ③ 无重叠的存活块
+    MEMSLICE_EXPECT(pool.Audit().ok);          // ① 池内部账目
+    for (const auto &b: live) MEMSLICE_EXPECT(Intact(b));   // ② 用户数据未被破坏
+    MEMSLICE_EXPECT(Disjoint(live));           // ③ 无重叠的存活块
   }
 }
 ```
@@ -116,18 +116,18 @@ if (!report.ok) {
 
 ```cpp
 // 防误报：正常负载必须通过
-MEMPOOL_CASE(audit, healthy_interleaved) { ...; MEMPOOL_EXPECT(pool.Audit().ok); }
+MEMSLICE_CASE(audit, healthy_interleaved) { ...; MEMSLICE_EXPECT(pool.Audit().ok); }
 
 // 防漏报：注入错误必须被抓到
-MEMPOOL_CASE(audit, detects_cycle) {
+MEMSLICE_CASE(audit, detects_cycle) {
   n0->next = n1; n1->next = n0;                  // 人为造一个环
-  MEMPOOL_EXPECT(detail::InspectChain(n0, 8, 1000).cyclic);
+  MEMSLICE_EXPECT(detail::InspectChain(n0, 8, 1000).cyclic);
 }
-MEMPOOL_CASE(audit, self_loop_terminates) {      // 防挂死
+MEMSLICE_CASE(audit, self_loop_terminates) {      // 防挂死
   n0->next = n0;
   const auto info = detail::InspectChain(n0, 8, 10);
-  MEMPOOL_EXPECT(info.cyclic);
-  MEMPOOL_EXPECT(info.length == 0);
+  MEMSLICE_EXPECT(info.cyclic);
+  MEMSLICE_EXPECT(info.length == 0);
 }
 ```
 
@@ -144,7 +144,7 @@ MEMPOOL_CASE(audit, self_loop_terminates) {      // 防挂死
 
 用法：
 
-```bash
+```zsh
 # ASan + UBSan
 clang++ -std=c++20 -O1 -g -fsanitize=address,undefined \
         -I include -I test test/*.cpp src/*.cpp -o /tmp/asan -pthread
@@ -156,7 +156,7 @@ clang++ -std=c++20 -O1 -g -fsanitize=thread \
 TSAN_OPTIONS=halt_on_error=1 /tmp/tsan --quiet
 
 # valgrind
-valgrind --leak-check=full ./build/linux/x86_64/release/test_mempool_lab --quiet
+valgrind --leak-check=full ./build/linux/x86_64/release/test_memslice --quiet
 ```
 
 **重要认知**：Sanitizer 全绿**不等于**没有 bug。它们只能发现"内存/并发层面
@@ -193,8 +193,8 @@ valgrind --leak-check=full ./build/linux/x86_64/release/test_mempool_lab --quiet
 
 一条命令跑齐所有层：
 
-```bash
-bash scripts/ci.sh
+```zsh
+zsh scripts/ci.sh
 ```
 
 覆盖：构建、用例、`xmake test` 门禁、零告警、clang-format、ASan+UBSan、

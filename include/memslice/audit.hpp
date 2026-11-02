@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_AUDIT_HPP_
-#define MEMPOOL_LAB_AUDIT_HPP_
+#ifndef MEMSLICE_AUDIT_HPP_
+#define MEMSLICE_AUDIT_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +10,7 @@
 
 #include "block.hpp"
 
-namespace mempool_lab::detail {
+namespace memslice::detail {
 
   // 内部不变量审计。
   //
@@ -106,6 +106,6 @@ namespace mempool_lab::detail {
     return false;
   }
 
-} // namespace mempool_lab::detail
+} // namespace memslice::detail
 
-#endif // MEMPOOL_LAB_AUDIT_HPP_
+#endif // MEMSLICE_AUDIT_HPP_

@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
   const char *filter = nullptr;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--quiet") == 0) {
-      labtest::Verbose() = false;
+      memslice_test::Verbose() = false;
     } else if (std::strncmp(argv[i], "--", 2) != 0) {
       filter = argv[i];
     }
@@ -23,20 +23,20 @@ int main(int argc, char **argv) {
   int failed = 0;
   int skipped = 0;
 
-  std::printf("mempool-lab test suite\n======================\n");
+  std::printf("MemSlice test suite\n===================\n");
   if (filter != nullptr) {
     std::printf("filter: %s\n", filter);
   }
 
-  for (const auto &c: labtest::Registry()) {
+  for (const auto &c: memslice_test::Registry()) {
     if (filter != nullptr && std::strcmp(c.group, filter) != 0) {
       ++skipped;
       continue;
     }
     std::printf("[ RUN  ] %s.%s\n", c.group, c.name);
-    labtest::CurrentFailed() = false;
+    memslice_test::CurrentFailed() = false;
     c.body();
-    if (labtest::CurrentFailed()) {
+    if (memslice_test::CurrentFailed()) {
       std::printf("[ FAIL ] %s.%s\n", c.group, c.name);
       ++failed;
     } else {

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_ALLOCATOR_HPP_
-#define MEMPOOL_LAB_ALLOCATOR_HPP_
+#ifndef MEMSLICE_ALLOCATOR_HPP_
+#define MEMSLICE_ALLOCATOR_HPP_
 
 #include <cstddef>
 #include <new>
@@ -11,15 +11,15 @@
 #include "config.hpp"
 #include "pool.hpp"
 
-namespace mempool_lab {
+namespace memslice {
 
   // 符合 C++20 Allocator 要求的分配器，可交给 std::vector / std::list /
   // std::map 等标准容器使用。
   //
   // ## 用法
   //
-  //     std::vector<int, mempool_lab::Allocator<int>> v;
-  //     std::list<int, mempool_lab::Allocator<int>> l;
+  //     std::vector<int, memslice::Allocator<int>> v;
+  //     std::list<int, memslice::Allocator<int>> l;
   //
   // ## C++20 的要求（比 C++17 少了几项）
   //
@@ -106,6 +106,6 @@ namespace mempool_lab {
     }
   };
 
-} // namespace mempool_lab
+} // namespace memslice
 
-#endif // MEMPOOL_LAB_ALLOCATOR_HPP_
+#endif // MEMSLICE_ALLOCATOR_HPP_

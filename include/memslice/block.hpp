@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_BLOCK_HPP_
-#define MEMPOOL_LAB_BLOCK_HPP_
+#ifndef MEMSLICE_BLOCK_HPP_
+#define MEMSLICE_BLOCK_HPP_
 
 #include <cstddef>
 #include <cstdint>
 
 #include "config.hpp"
 
-namespace mempool_lab {
+namespace memslice {
 
   // 空闲链表节点。
   //
@@ -129,6 +129,6 @@ namespace mempool_lab {
 
   } // namespace detail
 
-} // namespace mempool_lab
+} // namespace memslice
 
-#endif // MEMPOOL_LAB_BLOCK_HPP_
+#endif // MEMSLICE_BLOCK_HPP_

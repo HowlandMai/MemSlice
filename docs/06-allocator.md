@@ -8,7 +8,7 @@
 **符合 Allocator 要求的类型**。两者接口不同，因此需要一层适配：
 
 ```cpp
-std::vector<int, mempool_lab::Allocator<int>> v;   // 容器走池
+std::vector<int, memslice::Allocator<int>> v;   // 容器走池
 ```
 
 这一层看起来只是接口搬运，实际有两个地方容易做错。
@@ -63,7 +63,7 @@ bool operator==(const Allocator<U, Config> &) const noexcept { return true; }
 
 ```cpp
 Allocator<int> a, b;
-MEMPOOL_EXPECT(a == b);
+MEMSLICE_EXPECT(a == b);
 int *p = a.allocate(4);
 b.deallocate(p, 4);      // 一个实例分配、另一个释放 —— 必须成立
 ```
@@ -144,17 +144,17 @@ std::free(reinterpret_cast<void *>(raw));
 ## 5. 用法示例
 
 ```cpp
-#include "mempool_lab/allocator.hpp"
+#include "memslice/allocator.hpp"
 
 // 直接用于容器
-std::vector<int, mempool_lab::Allocator<int>> v;
-std::list<std::string, mempool_lab::Allocator<std::string>> l;
+std::vector<int, memslice::Allocator<int>> v;
+std::list<std::string, memslice::Allocator<std::string>> l;
 std::map<int, int, std::less<int>,
-         mempool_lab::Allocator<std::pair<const int, int>>> m;
+         memslice::Allocator<std::pair<const int, int>>> m;
 
 // 超对齐类型
 struct alignas(64) Vec4 { float v[4]; };
-std::vector<Vec4, mempool_lab::Allocator<Vec4>> simd;   // 仍满足 64 字节对齐
+std::vector<Vec4, memslice::Allocator<Vec4>> simd;   // 仍满足 64 字节对齐
 ```
 
 `std::list` / `std::map` 会自动 `rebind` 到节点类型，无需手动处理。

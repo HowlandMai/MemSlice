@@ -1,6 +1,6 @@
-# mempool-lab
+# MemSlice
 
-[![CI](https://github.com/HowlandMai/mempool-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/HowlandMai/mempool-lab/actions/workflows/ci.yml)
+[![CI](https://github.com/HowlandMai/MemSlice/actions/workflows/ci.yml/badge.svg)](https://github.com/HowlandMai/MemSlice/actions/workflows/ci.yml)
 
 一个用 C++20 写的**两级内存池**，约 1000 行核心代码 + 7 篇原理文档。
 
@@ -36,7 +36,7 @@
 | --- | --- |
 | 测试 | **39 用例全绿**（含并发、随机长跑、注入错误） |
 | 门禁 | **7/7 通过**：构建、用例、零告警、clang-format、ASan+UBSan、TSan、valgrind |
-| 代码规模 | 核心 1042 行 / 测试 923 行 / 文档 1465 行 |
+| 代码规模 | 核心 1042 行 / 测试 923 行 / 文档 1463 行 |
 | 依赖 | 零第三方依赖，只需 C++20 编译器和 xmake |
 
 ## ⚠️ 性能边界（重要）
@@ -81,10 +81,10 @@
 ## 快速上手
 
 ```cpp
-#include "mempool_lab/pool.hpp"
+#include "memslice/pool.hpp"
 
 int main() {
-  mempool_lab::MemoryPool<> pool;
+  memslice::MemoryPool<> pool;
 
   void *p = pool.Allocate(64);
   // ... 使用 p ...
@@ -106,39 +106,39 @@ int main() {
 与标准容器配合：
 
 ```cpp
-#include "mempool_lab/allocator.hpp"
+#include "memslice/allocator.hpp"
 
-std::vector<int, mempool_lab::Allocator<int>> v;
-std::list<std::string, mempool_lab::Allocator<std::string>> l;
+std::vector<int, memslice::Allocator<int>> v;
+std::list<std::string, memslice::Allocator<std::string>> l;
 
 // 超对齐类型也支持（内部回落到系统分配以记录偏移，见文档）
 struct alignas(64) Vec4 { float v[4]; };
-std::vector<Vec4, mempool_lab::Allocator<Vec4>> simd;
+std::vector<Vec4, memslice::Allocator<Vec4>> simd;
 ```
 
 ## 构建与测试
 
 需要：`xmake`、支持 C++20 的 `clang`。
 
-```bash
+```zsh
 xmake                        # 构建
 xmake test                   # 跑测试（门禁）
-./build/linux/x86_64/release/test_mempool_lab          # 直接运行
-./build/linux/x86_64/release/test_mempool_lab basic    # 只跑 basic 组
-./build/linux/x86_64/release/test_mempool_lab --quiet  # 安静模式
+./build/linux/x86_64/release/test_memslice          # 直接运行
+./build/linux/x86_64/release/test_memslice basic    # 只跑 basic 组
+./build/linux/x86_64/release/test_memslice --quiet  # 安静模式
 ```
 
 全量门禁（用例 + Sanitizer + valgrind + 告警 + 格式）：
 
-```bash
-bash scripts/ci.sh
+```zsh
+zsh scripts/ci.sh
 ```
 
 基准（对比本池与 glibc malloc）：
 
-```bash
-xmake build bench_mempool_lab
-./build/linux/x86_64/release/bench_mempool_lab
+```zsh
+xmake build bench_memslice
+./build/linux/x86_64/release/bench_memslice
 ```
 
 ## 文档（本项目的主要产出）
@@ -159,15 +159,17 @@ xmake build bench_mempool_lab
 ## 目录结构
 
 ```
-mempool-lab/
+MemSlice/
 ├── xmake.lua                      # 构建（xmake + clang，C++20）
-├── include/mempool_lab/
-│   ├── config.hpp                 # 配置参数与编译期校验
-│   ├── block.hpp                  # 头部布局、位域编解码、对齐工具
-│   ├── free_list.hpp              # 二级分配器：分桶空闲链表 + chunk 管理
-│   ├── audit.hpp                  # 不变量审计的原语
-│   ├── allocator.hpp              # STL 分配器适配（含超对齐处理）
-│   └── pool.hpp                   # 门面：路由、头部记账、审计
+├── include/
+│   ├── memslice.hpp               # 伞头：一次引入全部子头
+│   └── memslice/
+│       ├── config.hpp             # 配置参数与编译期校验
+│       ├── block.hpp              # 头部布局、位域编解码、对齐工具
+│       ├── free_list.hpp          # 二级分配器：分桶空闲链表 + chunk 管理
+│       ├── audit.hpp              # 不变量审计的原语
+│       ├── allocator.hpp          # STL 分配器适配（含超对齐处理）
+│       └── pool.hpp               # 门面：路由、头部记账、审计
 ├── src/default_pool.cpp           # 全局池单例
 ├── test/
 │   ├── test_utils.hpp             # 零依赖断言与用例注册
@@ -176,8 +178,8 @@ mempool-lab/
 │   ├── test_audit.cpp             # 审计：防误报 + 防漏报
 │   ├── test_fuzz.cpp              # 随机长跑与指针唯一性
 │   ├── test_concurrency.cpp       # 多线程与跨线程归还
-│   ├── test_allocator.cpp         # STL 分配器：容器、rebind、超对齐
-├── bench/bench_lab.cpp            # 简易基准
+│   └── test_allocator.cpp         # STL 分配器：容器、rebind、超对齐
+├── bench/bench.cpp                # 简易基准
 ├── docs/                          # 学习文档 00~07（见上表）
 ├── .github/workflows/ci.yml       # GitHub Actions（与 scripts/ci.sh 同一套检查）
 ├── scripts/ci.sh                  # 全量门禁（本地一条命令跑齐）

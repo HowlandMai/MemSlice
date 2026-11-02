@@ -180,14 +180,14 @@ for (n = head; n; n = n->next) {
    只测前者的话，一个永远返回 `ok` 的审计也能通过。
 
 ```cpp
-MEMPOOL_CASE(audit, detects_cycle) {         // 防漏报
+MEMSLICE_CASE(audit, detects_cycle) {         // 防漏报
   n0->next = n1; n1->next = n0;
-  MEMPOOL_EXPECT(detail::InspectChain(n0, 8, 1000).cyclic);
+  MEMSLICE_EXPECT(detail::InspectChain(n0, 8, 1000).cyclic);
 }
-MEMPOOL_CASE(audit, self_loop_terminates) {  // 防挂死
+MEMSLICE_CASE(audit, self_loop_terminates) {  // 防挂死
   n0->next = n0;
   const auto info = detail::InspectChain(n0, 8, 10);
-  MEMPOOL_EXPECT(info.cyclic);
+  MEMSLICE_EXPECT(info.cyclic);
 }
 ```
 

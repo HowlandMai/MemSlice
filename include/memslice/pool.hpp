@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_POOL_HPP_
-#define MEMPOOL_LAB_POOL_HPP_
+#ifndef MEMSLICE_POOL_HPP_
+#define MEMSLICE_POOL_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +17,7 @@
 #include "config.hpp"
 #include "free_list.hpp"
 
-namespace mempool_lab {
+namespace memslice {
 
   // 内存池门面。
   //
@@ -317,6 +317,6 @@ namespace mempool_lab {
   // 刻意做成不析构的单例：析构顺序问题会让"最后释放的静态对象"踩到已销毁的池。
   [[nodiscard]] MemoryPool<DefaultConfig> &DefaultPool() noexcept;
 
-} // namespace mempool_lab
+} // namespace memslice
 
-#endif // MEMPOOL_LAB_POOL_HPP_
+#endif // MEMSLICE_POOL_HPP_

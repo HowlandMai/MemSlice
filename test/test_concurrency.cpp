@@ -12,11 +12,11 @@
 #include <thread>
 #include <vector>
 
-#include "mempool_lab/pool.hpp"
+#include "memslice/pool.hpp"
 
-using namespace mempool_lab;
+using namespace memslice;
 
-MEMPOOL_CASE(concurrency, shared_pool_stress) {
+MEMSLICE_CASE(concurrency, shared_pool_stress) {
   constexpr int kThreads = 4;
   constexpr int kOps = 30000;
   MemoryPool<> pool;
@@ -34,12 +34,12 @@ MEMPOOL_CASE(concurrency, shared_pool_stress) {
   }
   for (auto &th: ts)
     th.join();
-  MEMPOOL_EXPECT(pool.Audit().ok);
-  MEMPOOL_INFO("4 线程 × 30000 次共享池操作完成");
+  MEMSLICE_EXPECT(pool.Audit().ok);
+  MEMSLICE_INFO("4 线程 × 30000 次共享池操作完成");
 }
 
 // 跨线程归还：A 分配、B 释放。所有权跨线程转移是最容易出错的方向。
-MEMPOOL_CASE(concurrency, cross_thread_return) {
+MEMSLICE_CASE(concurrency, cross_thread_return) {
   constexpr int kProducers = 4;
   constexpr int kPer = 2000;
   MemoryPool<> pool;
@@ -62,7 +62,7 @@ MEMPOOL_CASE(concurrency, cross_thread_return) {
     for (auto &th: ts)
       th.join();
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
+  MEMSLICE_EXPECT(pool.Audit().ok);
 
   {
     std::vector<std::thread> ts;
@@ -76,7 +76,7 @@ MEMPOOL_CASE(concurrency, cross_thread_return) {
           for (std::size_t k = 0; k < size; ++k) {
             if (bytes[k] != static_cast<unsigned char>(owner + 1)) {
               std::printf("         跨线程释放前数据已被破坏\n");
-              labtest::CurrentFailed() = true;
+              memslice_test::CurrentFailed() = true;
               return;
             }
           }
@@ -87,11 +87,11 @@ MEMPOOL_CASE(concurrency, cross_thread_return) {
     for (auto &th: ts)
       th.join();
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
-  MEMPOOL_INFO("跨线程归还完成");
+  MEMSLICE_EXPECT(pool.Audit().ok);
+  MEMSLICE_INFO("跨线程归还完成");
 }
 
-MEMPOOL_CASE(concurrency, thread_lifecycle_churn) {
+MEMSLICE_CASE(concurrency, thread_lifecycle_churn) {
   MemoryPool<> pool;
   for (int round = 0; round < 30; ++round) {
     std::vector<std::thread> ts;
@@ -111,14 +111,14 @@ MEMPOOL_CASE(concurrency, thread_lifecycle_churn) {
     for (auto &th: ts)
       th.join();
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
-  MEMPOOL_INFO("线程反复创建销毁 120 次后账目自洽");
+  MEMSLICE_EXPECT(pool.Audit().ok);
+  MEMSLICE_INFO("线程反复创建销毁 120 次后账目自洽");
 }
 
 // 并发指针唯一性：全部存活时校验地址唯一且区间不重叠。
 // 注意必须「全部存活时」校验——边分配边释放会让同一地址被先后记录两次，
 // 那属于测试设计缺陷而非池的缺陷。
-MEMPOOL_CASE(concurrency, concurrent_pointer_uniqueness) {
+MEMSLICE_CASE(concurrency, concurrent_pointer_uniqueness) {
   constexpr int kThreads = 6;
   constexpr int kPer = 1000;
   MemoryPool<> pool;
@@ -146,15 +146,15 @@ MEMPOOL_CASE(concurrency, concurrent_pointer_uniqueness) {
       addrs.push_back(reinterpret_cast<std::uintptr_t>(p));
   }
   std::sort(addrs.begin(), addrs.end());
-  MEMPOOL_EXPECT(std::adjacent_find(addrs.begin(), addrs.end()) == addrs.end());
+  MEMSLICE_EXPECT(std::adjacent_find(addrs.begin(), addrs.end()) == addrs.end());
 
-  MEMPOOL_EXPECT(pool.Audit().ok);
+  MEMSLICE_EXPECT(pool.Audit().ok);
   for (auto &v: per) {
     for (auto *p: v)
       pool.Deallocate(p);
   }
-  MEMPOOL_EXPECT(pool.Audit().ok);
-  MEMPOOL_INFO("并发指针唯一性通过");
+  MEMSLICE_EXPECT(pool.Audit().ok);
+  MEMSLICE_INFO("并发指针唯一性通过");
 }
 
 // kThreadSafe=false 的单线程路径也能正确工作
@@ -167,12 +167,12 @@ namespace {
   };
 } // namespace
 
-MEMPOOL_CASE(concurrency, single_threaded_config) {
+MEMSLICE_CASE(concurrency, single_threaded_config) {
   MemoryPool<SingleConfig> pool;
   std::vector<void *> v;
   for (int i = 0; i < 500; ++i)
     v.push_back(pool.Allocate(static_cast<std::size_t>((i % 16) + 1)));
   for (auto *p: v)
     pool.Deallocate(p);
-  MEMPOOL_EXPECT(pool.Audit().ok);
+  MEMSLICE_EXPECT(pool.Audit().ok);
 }

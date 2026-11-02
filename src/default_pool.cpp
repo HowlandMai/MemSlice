@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#include "mempool_lab/pool.hpp"
+#include "memslice/pool.hpp"
 
-namespace mempool_lab {
+namespace memslice {
 
   MemoryPool<DefaultConfig> &DefaultPool() noexcept {
     // 刻意不析构：析构顺序问题会让"最后释放的静态对象"踩到已销毁的池。
@@ -12,4 +12,4 @@ namespace mempool_lab {
     return *pool;
   }
 
-} // namespace mempool_lab
+} // namespace memslice

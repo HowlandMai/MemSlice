@@ -1,4 +1,4 @@
-# mempool-lab 设计方案
+# MemSlice 设计方案
 
 > 定位：**学习项目**。目标是理解内存分配器的设计与权衡，并展示「如何证明一个
 > 系统级组件是正确的」。
@@ -92,16 +92,18 @@
 ## 4. 目录结构
 
 ```
-mempool-lab/
+MemSlice/
 ├── xmake.lua                  # 构建（xmake + clang，C++20）
 ├── README.md                  # 项目说明与快速上手
 ├── .clang-format              # 代码风格
-├── include/mempool_lab/
-│   ├── config.hpp             # 配置参数与编译期开关
-│   ├── block.hpp              # 头部布局、容量编解码、对齐工具
-│   ├── free_list.hpp          # 空闲链表（分桶 + 加锁）
-│   ├── allocator.hpp          # STL 分配器适配（含超对齐处理）
-│   └── pool.hpp               # 门面：Allocate/Deallocate/Reallocate/Audit
+├── include/
+│   ├── memslice.hpp           # 伞头：一次引入全部子头
+│   └── memslice/
+│       ├── config.hpp         # 配置参数与编译期开关
+│       ├── block.hpp          # 头部布局、容量编解码、对齐工具
+│       ├── free_list.hpp      # 空闲链表（分桶 + 加锁）
+│       ├── allocator.hpp      # STL 分配器适配（含超对齐处理）
+│       └── pool.hpp           # 门面：Allocate/Deallocate/Reallocate/Audit
 ├── src/
 │   └── default_pool.cpp       # 全局池单例
 ├── test/
@@ -120,8 +122,11 @@ mempool-lab/
 │   ├── 03-building-log.md     # 构建日志：踩过的坑与修正（原创性所在）
 │   ├── 04-performance-notes.md# 性能分析：数据与归因
 │   ├── 05-verification.md     # 验证方法：如何证明它是对的
-│   └── 06-allocator.md        # STL 分配器：两个容易踩的坑
-└── scripts/ci.sh              # 全量门禁
+│   ├── 06-allocator.md        # STL 分配器：两个容易踩的坑
+│   └── 07-lessons.md          # 项目心得：取舍、失败与复盘
+├── bench/bench.cpp            # 简易基准（对比 glibc malloc）
+├── .github/workflows/ci.yml   # GitHub Actions（与 ci.sh 同一套检查）
+└── scripts/ci.sh              # 全量门禁（zsh）
 ```
 
 ## 5. 与原版实现的关系（诚实声明）

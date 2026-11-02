@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_CONFIG_HPP_
-#define MEMPOOL_LAB_CONFIG_HPP_
+#ifndef MEMSLICE_CONFIG_HPP_
+#define MEMSLICE_CONFIG_HPP_
 
 #include <cstddef>
 
-namespace mempool_lab {
+namespace memslice {
 
   // 池的配置参数。
   //
@@ -43,6 +43,6 @@ namespace mempool_lab {
 
   } // namespace detail
 
-} // namespace mempool_lab
+} // namespace memslice
 
-#endif // MEMPOOL_LAB_CONFIG_HPP_
+#endif // MEMSLICE_CONFIG_HPP_

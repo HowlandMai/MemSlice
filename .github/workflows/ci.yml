@@ -38,7 +38,7 @@ jobs:
         run: xmake test -y
 
       - name: 完整用例（含并发与随机长跑）
-        run: ./build/linux/x86_64/release/test_mempool_lab --quiet
+        run: ./build/linux/x86_64/release/test_memslice --quiet
 
       - name: 零告警检查
         run: |
@@ -51,7 +51,7 @@ jobs:
       - name: 格式检查
         run: |
           bad=0
-          for f in include/mempool_lab.hpp include/mempool_lab/*.hpp src/*.cpp \
+          for f in include/memslice.hpp include/memslice/*.hpp src/*.cpp \
                    test/*.hpp test/*.cpp bench/*.cpp; do
             [ -f "$f" ] || continue
             clang-format --dry-run -Werror "$f" || bad=1
@@ -81,4 +81,4 @@ jobs:
           rm -rf build .xmake
           xmake -y
           valgrind --leak-check=full --error-exitcode=99 \
-            ./build/linux/x86_64/release/test_mempool_lab --quiet
+            ./build/linux/x86_64/release/test_memslice --quiet

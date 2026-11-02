@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Howland Mai
 // SPDX-License-Identifier: MIT
 
-#ifndef MEMPOOL_LAB_FREE_LIST_HPP_
-#define MEMPOOL_LAB_FREE_LIST_HPP_
+#ifndef MEMSLICE_FREE_LIST_HPP_
+#define MEMSLICE_FREE_LIST_HPP_
 
 #include <cassert>
 #include <cstddef>
@@ -15,7 +15,7 @@
 #include "block.hpp"
 #include "config.hpp"
 
-namespace mempool_lab {
+namespace memslice {
 
   // 二级分配器：按块容量分桶的空闲链表。
   //
@@ -280,6 +280,6 @@ namespace mempool_lab {
     }
   };
 
-} // namespace mempool_lab
+} // namespace memslice
 
-#endif // MEMPOOL_LAB_FREE_LIST_HPP_
+#endif // MEMSLICE_FREE_LIST_HPP_

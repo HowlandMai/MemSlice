@@ -6,15 +6,15 @@
 // 设计：用例通过静态注册表自注册，main 遍历执行；支持按组名过滤。
 // 这样加用例只需写 MEMSLICE_CASE，无需改任何注册代码。
 
-#ifndef MEMPOOL_LAB_TEST_UTILS_HPP_
-#define MEMPOOL_LAB_TEST_UTILS_HPP_
+#ifndef MEMSLICE_TEST_UTILS_HPP_
+#define MEMSLICE_TEST_UTILS_HPP_
 
 #include <cstdio>
 #include <functional>
 #include <string>
 #include <vector>
 
-namespace labtest {
+namespace memslice_test {
 
   struct Case {
     const char *group;
@@ -43,24 +43,24 @@ namespace labtest {
     return verbose;
   }
 
-} // namespace labtest
+} // namespace memslice_test
 
-// 定义一个用例。group 用于命令行过滤（`./test_mempool_lab basic`）。
-#define MEMPOOL_CASE(group, name)                                                                                      \
-  static void MempoolCase_##group##_##name();                                                                          \
-  static ::labtest::Registrar MempoolReg_##group##_##name(#group, #name, MempoolCase_##group##_##name);                \
-  static void MempoolCase_##group##_##name()
+// 定义一个用例。group 用于命令行过滤（`./test_memslice basic`）。
+#define MEMSLICE_CASE(group, name)                                                                                     \
+  static void MemsliceCase_##group##_##name();                                                                         \
+  static ::memslice_test::Registrar MemsliceReg_##group##_##name(#group, #name, MemsliceCase_##group##_##name);        \
+  static void MemsliceCase_##group##_##name()
 
-#define MEMPOOL_EXPECT(cond)                                                                                           \
+#define MEMSLICE_EXPECT(cond)                                                                                          \
   do {                                                                                                                 \
     if (!(cond)) {                                                                                                     \
       std::printf("         FAILED at %s:%d: %s\n", __FILE__, __LINE__, #cond);                                        \
-      ::labtest::CurrentFailed() = true;                                                                               \
+      ::memslice_test::CurrentFailed() = true;                                                                         \
       return;                                                                                                          \
     }                                                                                                                  \
   } while (false)
 
-#define MEMPOOL_EXPECT_THROWS(expr, extype)                                                                            \
+#define MEMSLICE_EXPECT_THROWS(expr, extype)                                                                           \
   do {                                                                                                                 \
     bool threw = false;                                                                                                \
     try {                                                                                                              \
@@ -70,16 +70,16 @@ namespace labtest {
     }                                                                                                                  \
     if (!threw) {                                                                                                      \
       std::printf("         FAILED at %s:%d: 期望抛出 %s\n", __FILE__, __LINE__, #extype);                             \
-      ::labtest::CurrentFailed() = true;                                                                               \
+      ::memslice_test::CurrentFailed() = true;                                                                         \
       return;                                                                                                          \
     }                                                                                                                  \
   } while (false)
 
-#define MEMPOOL_INFO(msg)                                                                                              \
+#define MEMSLICE_INFO(msg)                                                                                             \
   do {                                                                                                                 \
-    if (::labtest::Verbose()) {                                                                                        \
+    if (::memslice_test::Verbose()) {                                                                                  \
       std::printf("         %s\n", (std::string() + msg).c_str());                                                     \
     }                                                                                                                  \
   } while (false)
 
-#endif // MEMPOOL_LAB_TEST_UTILS_HPP_
+#endif // MEMSLICE_TEST_UTILS_HPP_

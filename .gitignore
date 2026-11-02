@@ -7,3 +7,6 @@ compile_commands.json
 # 测试残留
 vgcore.*
 core
+
+# 编辑器工作区（compile_commands.json 已单独忽略）
+.vscode/
